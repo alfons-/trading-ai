@@ -1,0 +1,40 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Datos (opcional: quitar data/ si quieres versionar CSVs pequeños)
+data/*.csv
+data/*.json
+
+# IDE y sistema
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# Variables de entorno (nunca subir claves)
+.env
+.env.local
+*.env
+
+# Logs y temporales
+*.log
+tmp/
+temp/

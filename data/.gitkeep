@@ -1,0 +1,2 @@
+# Carpeta para CSVs y datos descargados (yfinance, etc.)
+# Los *.csv están en .gitignore para no subir archivos grandes
