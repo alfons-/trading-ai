@@ -45,9 +45,10 @@ trading-ai/
 │   ├── 01_python_basico/
 │   ├── 02_datos_y_pandas/
 │   └── ...
-├── src/                      # Código reutilizable del proyecto
-│   ├── data/                 # Descarga y almacenamiento de datos
-│   └── indicators/           # Indicadores técnicos
+├── src/                      # Código reutilizable (data, indicators)
+│   ├── data/                 # get_precios() – descarga/carga OHLCV
+│   └── indicators/          # add_sma(), add_rsi()
+├── scripts/                  # Ejemplos que usan src (ej. ejemplo_src.py)
 └── notebooks/                # Jupyter para explorar y visualizar
 ```
 
