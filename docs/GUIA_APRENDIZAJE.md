@@ -6,15 +6,15 @@ Plan paso a paso para aprender Python con un proyecto de trading. Cada bloque in
 
 ## Antes de empezar: PHP vs Python (resumen)
 
-| PHP | Python | Notas |
-|-----|--------|--------|
-| `$variable` | `variable` | Sin `$`; nombres con snake_case |
-| `array()` / `[]` | `list` → `[]`, `dict` → `{}` | Listas y diccionarios nativos |
-| `function nombre($x)` | `def nombre(x):` | Indentación obligatoria (4 espacios) |
-| `=>` en arrays | `:` en dicts | `{"clave": "valor"}` |
-| `foreach ($arr as $k => $v)` | `for k, v in dict.items():` | Iteración directa |
-| PDO / MySQLi | Varios (SQLite, PostgreSQL, etc.) | Aquí usaremos Pandas como “tablas en memoria” |
-| `require` / `include` | `import modulo` | Módulos y paquetes |
+| PHP                                     | Python           	 	     | Notas |
+|----                                    -|--------|           		     --------|
+| `$variable`                            | `variable` |  	   Sin `$`; nombres con snake_case |
+| `array()` / `[]` 				| `list` → `[]`, `dict` → `{}` | Listas y diccionarios nativos |
+| `function nombre($x)` 			| `def nombre(x):` |	 Indentación obligatoria (4 espacios) |
+| `=>` en arrays 					| `:` en dicts 					| `{"clave": "valor"}` |
+| `foreach ($arr as $k => $v)` 	| `for k, v in dict.items():`		 | Iteración directa |
+| PDO / MySQLi 				| Varios (SQLite, PostgreSQL, etc.) | Aquí usaremos Pandas como “tablas en memoria” |
+| `require` / `include`				 | `import modulo` | 				Módulos y paquetes |
 
 ---
 
@@ -209,14 +209,14 @@ Plan paso a paso para aprender Python con un proyecto de trading. Cada bloque in
 
 ## Orden sugerido de lecciones
 
-| Orden | Carpeta / tema | Enfoque |
-|-------|----------------|--------|
-| 1 | `01_python_basico` | Variables, listas, dicts, funciones |
-| 2 | `02_datos_y_pandas` | DataFrame, CSV, fechas |
-| 3 | `03_datos_mercado` | yfinance, OHLCV, guardar CSV |
-| 4 | `04_indicadores` | SMA, RSI, ta, matplotlib |
-| 5 | `05_señales_backtest` | Señales, simulación, métricas |
-| 6+ | `src/` + notebooks | Código reutilizable y experimentos |
+| Orden 			| Carpeta / tema 			| Enfoque |
+|-------			|----------------			|--------|
+| 1 | 			`01_python_basico` | 	Variables, listas, dicts, funciones |
+| 2 | 			`02_datos_y_pandas` | 	DataFrame, CSV, fechas |
+| 3 |			 `03_datos_mercado` |	 yfinance, OHLCV, guardar CSV |
+| 4 | 			`04_indicadores` | 		SMA, RSI, ta, matplotlib |
+| 5 |			 `05_señales_backtest` | Señales, simulación, métricas |
+| 6+ | 			`src/` + notebooks |	 Código reutilizable y experimentos |
 
 ---
 
