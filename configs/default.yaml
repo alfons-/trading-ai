@@ -1,0 +1,43 @@
+# Configuración por defecto para experimentos XGBoost + Bybit
+# ─────────────────────────────────────────────────────────────
+
+symbols:
+  - BTCUSDT
+  - ETHUSDT
+
+timeframe: "1h"        # intervalo de velas: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
+history_days: 365       # cuántos días de histórico descargar
+
+# ── Features ──────────────────────────────────────────────────
+features:
+  sma_corta: 10
+  sma_larga: 50
+  rsi_window: 14
+  volatility_window: 20
+  return_lags: [1, 2, 3, 5]
+
+# ── Target ────────────────────────────────────────────────────
+target:
+  horizon: 5            # predecir N barras hacia delante
+  threshold: 0.005      # umbral para clasificar como subida (0.5 %)
+
+# ── Train / Validation / Test split ──────────────────────────
+split:
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+# ── XGBoost ───────────────────────────────────────────────────
+xgboost:
+  n_estimators: 200
+  max_depth: 4
+  learning_rate: 0.05
+  subsample: 0.8
+  colsample_bytree: 0.8
+  eval_metric: "logloss"
+  early_stopping_rounds: 20
+
+# ── Backtest ──────────────────────────────────────────────────
+backtest:
+  prob_buy_threshold: 0.55    # prob(subida) > esto → comprar
+  prob_sell_threshold: 0.45   # prob(subida) < esto → vender/fuera

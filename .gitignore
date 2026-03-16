@@ -21,6 +21,10 @@ build/
 # Datos (opcional: quitar data/ si quieres versionar CSVs pequeños)
 data/*.csv
 data/*.json
+data/bybit/
+
+# Modelos entrenados
+models/
 
 # IDE y sistema
 .idea/
