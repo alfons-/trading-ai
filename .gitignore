@@ -22,6 +22,7 @@ build/
 data/*.csv
 data/*.json
 data/bybit/
+data/results/
 
 # Modelos entrenados
 models/
@@ -38,7 +39,20 @@ models/
 .env.local
 *.env
 
+# Logs de ejecución
+data/execution_logs/
+data/paper_logs/
+logs/
+
 # Logs y temporales
 *.log
 tmp/
 temp/
+
+# Configs de producción (cada Mac tiene el suyo)
+configs/execution.prod.yaml
+configs/*.local.yaml
+
+# launchd (los .plist instalados en ~/Library/LaunchAgents/ no están en el repo;
+# la plantilla scripts/com.trading-ai.deploy.plist sí se versiona)
+/*.plist

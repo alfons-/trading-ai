@@ -1,0 +1,49 @@
+# Configuración simple 1h para ver entradas/salidas
+# ─────────────────────────────────────────────────
+
+symbols:
+  - BTCUSDT
+
+timeframe_base: "1h"
+history_days: 365
+
+higher_timeframes:
+  daily:
+    timeframe: "1D"
+    enabled: false
+    sma_window: 20
+    rsi_window: 14
+  weekly:
+    timeframe: "1W"
+    enabled: false
+    trend_sma_window: 20
+    rsi_window: 14
+
+features:
+  sma_corta: 10
+  sma_larga: 50
+  rsi_window: 14
+  volatility_window: 20
+  return_lags: [1, 2, 3, 5]
+
+target:
+  horizon: 5
+  threshold: 0.005
+
+split:
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+xgboost:
+  n_estimators: 200
+  max_depth: 4
+  learning_rate: 0.05
+  subsample: 0.8
+  colsample_bytree: 0.8
+  eval_metric: "logloss"
+  early_stopping_rounds: 20
+
+backtest:
+  prob_buy_threshold: 0.55
+  prob_sell_threshold: 0.45

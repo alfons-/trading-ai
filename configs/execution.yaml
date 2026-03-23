@@ -1,0 +1,55 @@
+# Configuración de ejecución live / paper trading
+# ────────────────────────────────────────────────
+# Uso:
+#   python -m scripts.run_live --config configs/execution.yaml
+#   python -m scripts.run_live --config configs/execution.yaml --paper   # sin API, simulación local
+
+# ── Conexión ──────────────────────────────────────
+# testnet: true usa api-testnet.bybit.com (dinero ficticio)
+# testnet: false usa api.bybit.com (dinero real — ¡cuidado!)
+# API keys se leen de .env (BYBIT_API_KEY, BYBIT_API_SECRET)
+testnet: true
+bybit_category: "linear"
+
+# ── Símbolo y timeframes ─────────────────────────
+symbol: BTCUSDT
+timeframe_base: "4h"
+exit_timeframe: "1D"       # TF para señales de salida (1D, 4h)
+
+# ── Estrategia ────────────────────────────────────
+# Tipo: "rsi_cross" | "xgboost"
+strategy: "rsi_cross"
+
+# Parámetros RSI cross (solo si strategy == "rsi_cross")
+rsi_cross:
+  rsi_period: 14
+  entry_cross_level: 32
+  exit_cross_level: 50
+  entry_touch_lookback_bars: 0
+
+# Parámetros XGBoost (solo si strategy == "xgboost")
+xgboost:
+  model_path: "models/xgb_model.joblib"
+  prob_buy_threshold: 0.55
+  prob_sell_threshold: 0.45
+  config_path: "configs/default.yaml"   # config del pipeline ML para features
+
+# ── Gestión de riesgo ─────────────────────────────
+risk:
+  capital_per_trade_usdt: 100    # capital asignado por operación
+  capital_pct_per_trade: 0.0     # % del balance (0 = usar capital_per_trade_usdt)
+  leverage: 1                    # apalancamiento (1 = sin apalancamiento)
+  stop_loss_pct: 0.03            # -3% desde precio de entrada
+  take_profit_pct: 0.10          # +10% desde precio de entrada
+  max_open_positions: 1          # máximo de posiciones simultáneas
+
+# ── Loop de ejecución ─────────────────────────────
+loop:
+  check_interval_seconds: 30     # cada cuánto comprobar señales
+  lookback_bars: 100             # velas históricas a cargar para indicadores
+  history_days: 30               # días de datos para calcular RSI/features
+  log_interval_minutes: 15       # cada cuánto imprimir estado
+
+# ── Paper trading local ───────────────────────────
+paper:
+  initial_balance_usdt: 10000

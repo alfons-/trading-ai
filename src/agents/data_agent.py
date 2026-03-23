@@ -15,6 +15,9 @@ import pandas as pd
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _BASE_URL = "https://api.bybit.com"
 
+# spot = contado; linear = perpetuo USDT (compatibilidad con CSV antiguos en subcarpeta)
+DEFAULT_BYBIT_CATEGORY = "linear"
+
 COLUMNAS_OHLCV = ["fecha", "abierto", "alto", "bajo", "cierre", "volumen"]
 
 _INTERVAL_MAP = {
@@ -30,8 +33,14 @@ _INTERVAL_MAP = {
 class DataAgent:
     """Obtiene y almacena datos OHLCV de Bybit."""
 
-    def __init__(self, data_dir: Path | None = None):
-        self.data_dir = Path(data_dir) if data_dir else _PROJECT_ROOT / "data" / "bybit"
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        category: str | None = None,
+    ):
+        self.category = (category or DEFAULT_BYBIT_CATEGORY).strip().lower()
+        base = Path(data_dir) if data_dir else _PROJECT_ROOT / "data" / "bybit"
+        self.data_dir = base / self.category
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def _resolve_interval(self, timeframe: str) -> str:
@@ -50,7 +59,7 @@ class DataAgent:
     ) -> list[list]:
         """Descarga un bloque de klines desde Bybit v5 (público)."""
         params = {
-            "category": "linear",
+            "category": self.category,
             "symbol": symbol,
             "interval": interval,
             "start": start_ms,
@@ -115,5 +124,5 @@ class DataAgent:
         df = df[COLUMNAS_OHLCV].drop_duplicates(subset="fecha").sort_values("fecha").reset_index(drop=True)
 
         df.to_csv(csv_path, index=False)
-        print(f"[DataAgent] Guardado {csv_path} ({len(df)} filas)")
+        print(f"[DataAgent] Guardado {csv_path} ({len(df)} filas) [category={self.category}]")
         return df

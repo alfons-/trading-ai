@@ -1,0 +1,41 @@
+# Solo cruces de RSI en 4h — scripts/strategy_rsi_cross_4h.py
+#
+# Entrada (long): en 4h, RSI "toca" el nivel en el sentido del cruce:
+#   cruce hacia arriba → vela anterior < entry_cross_level y vela actual >= entry_cross_level
+#   (incluye el toque/cruce del 32 si entry_cross_level: 32).
+# Opcional: entry_touch_lookback_bars > 0 exige además que en esas velas 4h
+#   el mínimo del RSI haya sido <= entry_cross_level (zona tocada antes del rebote).
+#
+# Salida:
+#   - "4h": cruce hacia abajo de exit_cross_level en el mismo timeframe de entrada.
+#   - "1D": cruce hacia abajo en RSI diario (mismo rsi_period); entrada sigue en 4h.
+#     La salida se ejecuta en la primera vela 4h >= cierre del día donde el cruce diario queda confirmado.
+
+exit_timeframe: "1D"
+
+symbol: BTCUSDT
+timeframe: "4h"
+history_days: 2000
+bybit_category: "linear"
+
+rsi_period: 14
+
+# Entrada: cruce ↑ del 32 (desde abajo hacia arriba, incluye el toque en el cruce)
+entry_cross_level: 32
+# Salida: cruce ↓ (por defecto 50; puedes usar 70 u otro)
+exit_cross_level: 50
+
+# 0 = solo el cruce (rsi_prev < 32 y rsi_now >= 32).
+# 12 = en las últimas 12 velas 4h el RSI debió llegar a <= 32 al menos una vez
+entry_touch_lookback_bars: 0
+
+# Stop loss: fracción del precio de entrada. 0.03 = -3%. 0 = sin stop.
+# (En backtest histórico BTC ~2000d, 0.03 + salida 1D mejora retorno vs 0.02.)
+stop_loss_pct: 0.03
+
+# `position_leverage` no está en este archivo: el script usa por defecto 1.0 (1×, sin
+# multiplicar retornos de la estrategia; mismas unidades que buy & hold). Solo si
+# quieres simular apalancamiento en métricas, añade p. ej. position_leverage: 1.2.
+
+# Solo para mostrar en consola: capital final y ganancia en € (el modelo sigue en retornos).
+initial_capital_eur: 10000

@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src.agents.data_agent import DataAgent
+from src.agents.data_agent import DEFAULT_BYBIT_CATEGORY, DataAgent
 from src.agents.feature_agent import FeatureAgent
 from src.agents.label_agent import LabelAgent
 from src.agents.model_agent import ModelAgent
@@ -26,8 +26,25 @@ class OrchestratorAgent:
     def __init__(self, config_path: str | Path | None = None):
         if config_path is None:
             config_path = _PROJECT_ROOT / "configs" / "default.yaml"
+        config_path = Path(config_path)
+        if not config_path.is_absolute():
+            config_path = _PROJECT_ROOT / config_path
         with open(config_path, "r") as f:
             self.cfg = yaml.safe_load(f)
+
+    def _get_timeframe_base(self) -> str:
+        return self.cfg.get("timeframe_base") or self.cfg.get("timeframe", "4h")
+
+    def _get_all_timeframes(self) -> list[str]:
+        """Devuelve lista de todos los TFs a descargar (base + higher)."""
+        tfs = [self._get_timeframe_base()]
+        ht = self.cfg.get("higher_timeframes", {})
+        for _name, ht_cfg in ht.items():
+            if ht_cfg.get("enabled") and "timeframe" in ht_cfg:
+                tf = ht_cfg["timeframe"]
+                if tf not in tfs:
+                    tfs.append(tf)
+        return tfs
 
     def run(self, symbol: str | None = None) -> dict:
         """
@@ -39,31 +56,44 @@ class OrchestratorAgent:
         if symbol is None:
             symbol = self.cfg["symbols"][0]
 
+        tf_base = self._get_timeframe_base()
+
         print(f"\n{'='*60}")
-        print(f"  Experimento: {symbol} | {self.cfg['timeframe']}")
+        print(f"  Experimento: {symbol} | base={tf_base}")
         print(f"{'='*60}\n")
 
-        # 1. Datos
+        # 1. Datos (base + higher timeframes)
         print("── 1. Descargando datos ──")
-        data_agent = DataAgent()
-        df = data_agent.get_ohlcv(
-            symbol=symbol,
-            timeframe=self.cfg["timeframe"],
-            days=self.cfg["history_days"],
-        )
-        print(f"   Filas descargadas: {len(df)}")
+        bybit_cat = str(self.cfg.get("bybit_category", DEFAULT_BYBIT_CATEGORY)).strip().lower()
+        print(f"   Bybit category: {bybit_cat} (spot = contado / velas normales)")
+        data_agent = DataAgent(category=bybit_cat)
+        days = self.cfg["history_days"]
+        all_tfs = self._get_all_timeframes()
 
-        # 2. Features
+        dfs_by_tf: dict[str, pd.DataFrame] = {}
+        for tf in all_tfs:
+            tf_df = data_agent.get_ohlcv(symbol=symbol, timeframe=tf, days=days)
+            dfs_by_tf[tf] = tf_df
+            print(f"   {tf}: {len(tf_df)} filas → {symbol}_{tf}.csv")
+
+        df = dfs_by_tf[tf_base]
+        print(f"   Base ({tf_base}): {len(df)} filas")
+
+        # 2. Features (base + higher timeframes)
         print("\n── 2. Construyendo features ──")
         feat_cfg = self.cfg["features"]
+        ht_cfg = self.cfg.get("higher_timeframes", {})
         feature_agent = FeatureAgent(
             sma_corta=feat_cfg["sma_corta"],
             sma_larga=feat_cfg["sma_larga"],
             rsi_window=feat_cfg["rsi_window"],
             volatility_window=feat_cfg["volatility_window"],
             return_lags=feat_cfg["return_lags"],
+            macd_cfg=feat_cfg.get("macd", {}),
+            sr_cfg=feat_cfg.get("support_resistance", {}),
+            higher_timeframes_cfg=ht_cfg,
         )
-        df = feature_agent.build_features(df)
+        df = feature_agent.build_features(df, higher_dfs=dfs_by_tf)
         print(f"   Features: {feature_agent.feature_names}")
 
         # 3. Target
@@ -110,6 +140,7 @@ class OrchestratorAgent:
             learning_rate=xgb_cfg["learning_rate"],
             subsample=xgb_cfg["subsample"],
             colsample_bytree=xgb_cfg["colsample_bytree"],
+            scale_pos_weight=xgb_cfg.get("scale_pos_weight", 1.0),
             eval_metric=xgb_cfg["eval_metric"],
             early_stopping_rounds=xgb_cfg["early_stopping_rounds"],
         )
@@ -125,9 +156,10 @@ class OrchestratorAgent:
         backtest_agent = BacktestAgent(
             prob_buy_threshold=bt_cfg["prob_buy_threshold"],
             prob_sell_threshold=bt_cfg["prob_sell_threshold"],
+            min_hold_bars=bt_cfg.get("min_hold_bars", 0),
         )
         test_probas = model_agent.predict_proba(X_test)[:, 1]
-        bt_result = backtest_agent.run(df_test, test_probas)
+        bt_result = backtest_agent.run(df_test, test_probas, symbol=symbol)
 
         # 8. Guardar modelo
         model_agent.save()

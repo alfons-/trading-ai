@@ -1,12 +1,33 @@
 # Configuración por defecto para experimentos XGBoost + Bybit
 # ─────────────────────────────────────────────────────────────
+# bybit_category: spot | linear — CSV en data/bybit/<category>/
+
+bybit_category: "linear"
 
 symbols:
   - BTCUSDT
   - ETHUSDT
 
-timeframe: "1h"        # intervalo de velas: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
-history_days: 365       # cuántos días de histórico descargar
+# ── Timeframes ───────────────────────────────────────────────
+# timeframe_base: TF principal para señales de entrada y modelo
+# higher_timeframes: TFs superiores para contexto (tendencia, salida)
+#   - Para cada símbolo, DataAgent descarga 3 CSV:
+#     <symbol>_4h.csv, <symbol>_1D.csv, <symbol>_1W.csv
+timeframe_base: "4h"
+history_days: 5475       # días de histórico (aplica a todos los TFs)
+
+higher_timeframes:
+  daily:
+    timeframe: "1D"      # TF para horizonte de salida
+    enabled: true
+    sma_window: 20       # SMA diaria para contexto
+  weekly:
+    timeframe: "1W"      # TF para filtro de tendencia de mercado
+    enabled: true
+    trend_sma_window: 20 # SMA semanal: cierre > sma → alcista
+
+# Lista derivada de todos los TFs a descargar (base + higher)
+# DataAgent los recorre: ["4h", "1D", "1W"]
 
 # ── Features ──────────────────────────────────────────────────
 features:

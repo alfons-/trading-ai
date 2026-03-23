@@ -1,0 +1,37 @@
+# Estrategia long 4h — scripts/strategy_long_rules.py
+# python -m scripts.strategy_long_rules --config configs/strategy_long.yaml
+
+symbol: BTCUSDT
+timeframe_base: "4h"
+history_days: 2500
+bybit_category: "linear"   # spot | linear (ajusta según tu DataAgent)
+
+rsi_period: 14
+rsi_entry_cross_level: 30   # cruce hacia arriba: RSI pasa de <30 a >=30
+ema_trend_4h: 200
+ema_filter_1d: 200
+
+# Volumen: vela actual > anterior Y > media móvil volumen
+volume_ma_period: 20
+
+# Divergencia alcista RSI (opcional; si true, muy selectivo)
+entry:
+  require_divergence: false   # true = exige divergencia RSI alcista (muy pocas señales)
+  require_volume_increase: true  # volumen > vela ant. y > SMA volumen
+
+# Dos mínimos en bajo: precio LL + RSI HL; el 2º mínimo cerca de la señal
+divergence_lookback: 50
+divergence_pivot_width: 2
+divergence_max_bars_since_pivot: 20
+
+exit:
+  stop_loss_pct: 0.05           # -5% desde entrada (sobre precio)
+  take_profit_total_pct: 0.10   # +10% take profit total (toca el alto)
+  rsi_overbought_1d: 70
+  # Si ambos SL y TP en la misma vela: asumir primero SL (conservador)
+  same_bar_priority: "stop_first"
+
+partial_take_profit:
+  enabled: true
+  profit_pct: 0.05    # +5% del precio de entrada
+  fraction: 0.5       # cerrar 50% de la posición; el resto sigue hasta TP 10%, RSI 1D o SL

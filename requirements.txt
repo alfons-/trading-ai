@@ -114,3 +114,5 @@ websockets==16.0
 wheel==0.46.3
 xgboost==3.2.0
 yfinance==1.2.0
+pybit>=5.9.0
+python-dotenv>=1.1.0

@@ -1,0 +1,35 @@
+# Plantilla "marco profesional" — copia a strategy_long.yaml o úsala como referencia.
+# No optimices docenas de parámetros a la vez; cambia UNA cosa y mide.
+
+symbol: BTCUSDT
+timeframe_base: "4h"
+history_days: 3000
+bybit_category: "linear"   # o "spot" según tu fuente
+
+rsi_period: 14
+rsi_entry_cross_level: 30
+ema_trend_4h: 200
+ema_filter_1d: 200
+volume_ma_period: 20
+
+# Confluencias: divergencia suele ser MUY selectiva; volumen más estable.
+entry:
+  require_divergence: false
+  require_volume_increase: true
+
+divergence_lookback: 50
+divergence_pivot_width: 2
+divergence_max_bars_since_pivot: 20
+
+# Riesgo / objetivo en PRECIO (en cuenta real: tamaño de posición según % cuenta)
+exit:
+  stop_loss_pct: 0.05              # 1R ≈ 5 %
+  take_profit_total_pct: 0.10      # 2R ≈ 10 % si defines R por el stop
+  rsi_overbought_1d: 70
+  same_bar_priority: "stop_first"  # conservador si SL y TP en misma vela
+
+# Liquida parte del riesgo "psicológico" y deja correr el resto con tus salidas lógicas
+partial_take_profit:
+  enabled: true
+  profit_pct: 0.05
+  fraction: 0.5

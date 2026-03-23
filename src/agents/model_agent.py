@@ -25,6 +25,7 @@ class ModelAgent:
         learning_rate: float = 0.05,
         subsample: float = 0.8,
         colsample_bytree: float = 0.8,
+        scale_pos_weight: float = 1.0,
         eval_metric: str = "logloss",
         early_stopping_rounds: int = 20,
     ):
@@ -34,6 +35,7 @@ class ModelAgent:
             learning_rate=learning_rate,
             subsample=subsample,
             colsample_bytree=colsample_bytree,
+            scale_pos_weight=scale_pos_weight,
             eval_metric=eval_metric,
             early_stopping_rounds=early_stopping_rounds,
             use_label_encoder=False,
