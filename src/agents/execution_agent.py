@@ -38,6 +38,7 @@ class ExecutionAgent:
         *,
         testnet: bool = True,
         category: str = "linear",
+        tld: str = "com",
         log_dir: Path | str | None = None,
     ):
         from pybit.unified_trading import HTTP
@@ -49,13 +50,15 @@ class ExecutionAgent:
             testnet=testnet,
             api_key=api_key,
             api_secret=api_secret,
+            tld=tld,
         )
 
         self._log_dir = Path(log_dir) if log_dir else _PROJECT_ROOT / "data" / "execution_logs"
         self._log_dir.mkdir(parents=True, exist_ok=True)
 
         env_label = "TESTNET" if testnet else "MAINNET"
-        print(f"[ExecutionAgent] Conectado a Bybit {env_label} ({self.category})")
+        region = f" [{tld.upper()}]" if tld != "com" else ""
+        print(f"[ExecutionAgent] Conectado a Bybit {env_label}{region} ({self.category})")
 
     # ------------------------------------------------------------------
     # Información de cuenta

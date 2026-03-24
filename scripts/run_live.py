@@ -85,6 +85,7 @@ def create_execution_agent(cfg: dict, paper: bool = False) -> ExecutionAgent | P
         api_secret=api_secret,
         testnet=cfg.get("testnet", True),
         category=cfg.get("bybit_category", DEFAULT_BYBIT_CATEGORY),
+        tld=cfg.get("bybit_tld", "com"),
     )
 
 
@@ -261,6 +262,11 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
     interval = int(loop_cfg.get("check_interval_seconds", 60))
     exit_tf = cfg.get("exit_timeframe", "4h")
 
+    risk_cfg = cfg.get("risk", {})
+    max_daily_loss = float(risk_cfg.get("max_daily_loss_usdt", 0))
+
+    initial_balance = agent.get_balance()["wallet_balance"]
+
     print(f"\n{'='*60}")
     print(f"  Live Trading — {symbol}")
     print(f"  Estrategia: {strategy}")
@@ -268,6 +274,9 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
     env = "TESTNET" if cfg.get("testnet", True) else "MAINNET"
     mode = "PAPER" if isinstance(agent, PaperExecutionAgent) else env
     print(f"  Modo: {mode}")
+    print(f"  Balance inicial: {initial_balance:.2f} USDT")
+    if max_daily_loss > 0:
+        print(f"  Limite perdida diaria: {max_daily_loss:.2f} USDT")
     print(f"{'='*60}\n")
 
     agent.print_status(symbol)
@@ -276,6 +285,15 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
 
     while _running:
         try:
+            if max_daily_loss > 0:
+                current_balance = agent.get_balance()["wallet_balance"]
+                daily_loss = initial_balance - current_balance
+                if daily_loss >= max_daily_loss:
+                    print(f"\n[LiveRunner] LIMITE DE PERDIDA DIARIA ALCANZADO")
+                    print(f"  Perdida: {daily_loss:.2f} USDT (limite: {max_daily_loss:.2f} USDT)")
+                    print(f"  Bot detenido por seguridad. Revisa la estrategia antes de reiniciar.")
+                    break
+
             df = fetch_latest_data(symbol, cfg, timeframe=cfg.get("timeframe_base", "4h"))
 
             if df.empty:

@@ -8,8 +8,9 @@
 # testnet: true usa api-testnet.bybit.com (dinero ficticio)
 # testnet: false usa api.bybit.com (dinero real — ¡cuidado!)
 # API keys se leen de .env (BYBIT_API_KEY, BYBIT_API_SECRET)
-testnet: true
+testnet: false
 bybit_category: "linear"
+bybit_tld: "eu"              # "eu" para Bybit EU (España/Europa), "com" para global
 
 # ── Símbolo y timeframes ─────────────────────────
 symbol: BTCUSDT
@@ -36,12 +37,13 @@ xgboost:
 
 # ── Gestión de riesgo ─────────────────────────────
 risk:
-  capital_per_trade_usdt: 100    # capital asignado por operación
+  capital_per_trade_usdt: 20     # 20 USDT por operación (conservador con 100 USDT)
   capital_pct_per_trade: 0.0     # % del balance (0 = usar capital_per_trade_usdt)
   leverage: 1                    # apalancamiento (1 = sin apalancamiento)
   stop_loss_pct: 0.03            # -3% desde precio de entrada
   take_profit_pct: 0.10          # +10% desde precio de entrada
   max_open_positions: 1          # máximo de posiciones simultáneas
+  max_daily_loss_usdt: 10        # si pierde 10 USDT en el día, el bot se detiene
 
 # ── Loop de ejecución ─────────────────────────────
 loop:
