@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import copy
 import os
+import json
 import signal
 import sys
 import time
@@ -32,6 +33,8 @@ import yaml
 from dotenv import load_dotenv
 from ta.momentum import RSIIndicator
 
+from src.notifications.email import send_trade_email
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -40,6 +43,15 @@ from src.agents.data_agent import DEFAULT_BYBIT_CATEGORY, DataAgent
 from src.agents.execution_agent import ExecutionAgent, PaperExecutionAgent
 
 _running = True
+
+_SIGNALS_DIR = ROOT / "data" / "signal_logs"
+_SIGNALS_FILE = _SIGNALS_DIR / "signals.jsonl"
+
+
+def log_signal(record: dict[str, Any]) -> None:
+    _SIGNALS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(_SIGNALS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, default=str) + "\n")
 
 
 def _handle_signal(signum, frame):
@@ -235,12 +247,13 @@ def execute_signal(
         if leverage > 1:
             agent.set_leverage(symbol, leverage)
 
-        agent.open_long(
+        result = agent.open_long(
             symbol=symbol,
             qty=qty,
             stop_loss=sl_price,
             take_profit=tp_price,
         )
+        send_trade_email(result)
 
     elif signal_type == "sell":
         if not positions:
@@ -249,9 +262,12 @@ def execute_signal(
 
         for pos in positions:
             if pos["side"] == "Buy":
-                agent.close_long(symbol=symbol, qty=pos["size"])
+                result = agent.close_long(symbol=symbol, qty=pos["size"])
             elif pos["side"] == "Sell":
-                agent.close_short(symbol=symbol, qty=pos["size"])
+                result = agent.close_short(symbol=symbol, qty=pos["size"])
+            else:
+                continue
+            send_trade_email(result)
 
 
 def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
@@ -336,6 +352,22 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
                 execute_signal(signal, symbol, agent, cfg)
             else:
                 print("  Sin señal")
+
+            try:
+                log_signal(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "symbol": symbol,
+                        "strategy": strategy,
+                        "candle_time": last_fecha,
+                        "close_price": float(price),
+                        "rsi": float(rsi_val) if rsi_val == rsi_val else None,
+                        "signal": signal,
+                        "mode": "PAPER" if isinstance(agent, PaperExecutionAgent) else env,
+                    }
+                )
+            except Exception:
+                pass
 
             agent.print_status(symbol)
 

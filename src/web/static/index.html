@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tradedan – Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e1e4ed;
+      --muted: #8b8fa3;
+      --accent: #6c5ce7;
+      --green: #00b894;
+      --red: #e17055;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-bottom: 1.5rem;
+    }
+
+    h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .section { margin-bottom: 2rem; }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-buy  { background: var(--green); color: #000; }
+    .badge-sell { background: var(--red);   color: #fff; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      position: sticky;
+      top: 0;
+    }
+
+    tbody td {
+      padding: 0.45rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr:hover { background: var(--surface); }
+
+    .empty-msg {
+      color: var(--muted);
+      font-style: italic;
+      padding: 1rem 0;
+    }
+
+    .refresh-info {
+      color: var(--muted);
+      font-size: 0.7rem;
+      text-align: right;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Tradedan Dashboard</h1>
+  <p class="subtitle">Bot control + signals & paper orders – auto-refresh every 3 s</p>
+  <p class="refresh-info">Last update: <span id="lastUpdate">–</span></p>
+
+  <div class="section">
+    <h2>Bot control</h2>
+    <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.75rem;">
+      <button id="btnStart" style="background:var(--accent); color:white; border:0; padding:0.4rem 0.7rem; border-radius:6px; cursor:pointer;">
+        Start (paper)
+      </button>
+      <button id="btnStop" style="background:#333; color:white; border:1px solid var(--border); padding:0.4rem 0.7rem; border-radius:6px; cursor:pointer;">
+        Stop
+      </button>
+      <span style="color:var(--muted); font-size:0.8rem;">Status: <span id="botStatus">–</span></span>
+    </div>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0.75rem;">
+      <div style="color:var(--muted); font-size:0.75rem; margin-bottom:0.25rem;">Tail log (`logs/bot_web.log`):</div>
+      <pre id="botLog" style="white-space:pre-wrap; font-size:0.75rem; line-height:1.25rem; color:var(--text); margin:0;"></pre>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Signals</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Symbol</th>
+          <th>Strategy</th>
+          <th>Candle</th>
+          <th>Close</th>
+          <th>RSI</th>
+          <th>Signal</th>
+          <th>Mode</th>
+        </tr>
+      </thead>
+      <tbody id="signalsBody"><tr><td colspan="8" class="empty-msg">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Paper Orders</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Symbol</th>
+          <th>Side</th>
+          <th>Qty</th>
+          <th>Price</th>
+          <th>SL</th>
+          <th>TP</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody id="ordersBody"><tr><td colspan="8" class="empty-msg">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Paper Trades (closed)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Symbol</th>
+          <th>Qty</th>
+          <th>Entry</th>
+          <th>Exit</th>
+          <th>PnL</th>
+          <th>Return</th>
+        </tr>
+      </thead>
+      <tbody id="tradesBody"><tr><td colspan="7" class="empty-msg">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <script>
+    function esc(v) {
+      if (v == null) return "–";
+      const s = String(v);
+      const el = document.createElement("span");
+      el.textContent = s;
+      return el.innerHTML;
+    }
+
+    function signalBadge(sig) {
+      if (!sig) return "–";
+      const cls = sig.toLowerCase() === "buy" ? "badge-buy" : "badge-sell";
+      return `<span class="badge ${cls}">${esc(sig)}</span>`;
+    }
+
+    function fmtNum(v, dec) {
+      if (v == null || v === "") return "–";
+      const n = Number(v);
+      return isNaN(n) ? esc(v) : n.toFixed(dec ?? 2);
+    }
+
+    function renderSignals(rows) {
+      const tb = document.getElementById("signalsBody");
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="8" class="empty-msg">No signals yet.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows
+        .slice()
+        .reverse()
+        .map(r => `<tr>
+          <td>${esc(r.timestamp)}</td>
+          <td>${esc(r.symbol)}</td>
+          <td>${esc(r.strategy)}</td>
+          <td>${esc(r.candle_time)}</td>
+          <td>${fmtNum(r.close_price)}</td>
+          <td>${fmtNum(r.rsi, 1)}</td>
+          <td>${signalBadge(r.signal)}</td>
+          <td>${esc(r.mode)}</td>
+        </tr>`)
+        .join("");
+    }
+
+    function renderOrders(rows) {
+      const tb = document.getElementById("ordersBody");
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="8" class="empty-msg">No paper orders yet.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows
+        .slice()
+        .reverse()
+        .map(r => `<tr>
+          <td>${esc(r.timestamp)}</td>
+          <td>${esc(r.symbol)}</td>
+          <td>${signalBadge(r.side)}</td>
+          <td>${fmtNum(r.qty, 4)}</td>
+          <td>${fmtNum(r.price)}</td>
+          <td>${fmtNum(r.stop_loss)}</td>
+          <td>${fmtNum(r.take_profit)}</td>
+          <td>${esc(r.order_type)}</td>
+        </tr>`)
+        .join("");
+    }
+
+    function renderTrades(rows) {
+      const tb = document.getElementById("tradesBody");
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="7" class="empty-msg">No paper trades yet.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows
+        .slice()
+        .reverse()
+        .map(r => {
+          const pnl = Number(r.pnl);
+          const pnlTxt = isNaN(pnl) ? esc(r.pnl) : pnl.toFixed(2);
+          const pnlColor = isNaN(pnl) ? "inherit" : (pnl >= 0 ? "var(--green)" : "var(--red)");
+          return `<tr>
+          <td>${esc(r.timestamp)}</td>
+          <td>${esc(r.symbol)}</td>
+          <td>${fmtNum(r.qty, 4)}</td>
+          <td>${fmtNum(r.entry_price)}</td>
+          <td>${fmtNum(r.exit_price)}</td>
+          <td style="color:${pnlColor}; font-weight:600;">${pnlTxt}</td>
+          <td>${fmtNum((Number(r.retorno) || 0) * 100, 2)}%</td>
+        </tr>`;
+        })
+        .join("");
+    }
+
+    async function refresh() {
+      try {
+        const [botRes, sigRes, ordRes, trdRes] = await Promise.all([
+          fetch("/api/bot/status"),
+          fetch("/api/signals?limit=200"),
+          fetch("/api/paper-orders?limit=200"),
+          fetch("/api/paper-trades?limit=200"),
+        ]);
+        const bot = await botRes.json();
+        document.getElementById("botStatus").textContent =
+          bot.running ? `RUNNING (pid ${bot.pid})` : "STOPPED";
+        document.getElementById("botLog").textContent =
+          (bot.last_log_lines || []).slice(-80).join("\n");
+        renderSignals(await sigRes.json());
+        renderOrders(await ordRes.json());
+        renderTrades(await trdRes.json());
+        document.getElementById("lastUpdate").textContent =
+          new Date().toLocaleTimeString();
+      } catch (e) {
+        console.error("refresh error", e);
+      }
+    }
+
+    async function startBot() {
+      await fetch("/api/bot/start?paper=true", { method: "POST" });
+      await refresh();
+    }
+
+    async function stopBot() {
+      await fetch("/api/bot/stop", { method: "POST" });
+      await refresh();
+    }
+
+    refresh();
+    setInterval(refresh, 3000);
+
+    document.getElementById("btnStart").addEventListener("click", startBot);
+    document.getElementById("btnStop").addEventListener("click", stopBot);
+  </script>
+</body>
+</html>

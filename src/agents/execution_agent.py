@@ -425,6 +425,7 @@ class PaperExecutionAgent:
 
         self._log_dir = Path(log_dir) if log_dir else _PROJECT_ROOT / "data" / "paper_logs"
         self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._trades_log_file = self._log_dir / "paper_trades.jsonl"
 
         print(f"[PaperExecution] Simulador local iniciado | Balance: {initial_balance:.2f} USDT")
 
@@ -499,7 +500,7 @@ class PaperExecutionAgent:
             if pos:
                 pnl = (exec_price - pos["entry_price"]) * qty
                 self._balance += cost + pnl
-                self._trades.append({
+                trade = {
                     "symbol": symbol,
                     "entry_price": pos["entry_price"],
                     "exit_price": exec_price,
@@ -507,7 +508,9 @@ class PaperExecutionAgent:
                     "pnl": pnl,
                     "retorno": exec_price / pos["entry_price"] - 1,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
+                }
+                self._trades.append(trade)
+                self._log_trade(trade)
         elif side == "Sell" and not reduce_only:
             self._positions[symbol] = {
                 "symbol": symbol,
@@ -525,7 +528,7 @@ class PaperExecutionAgent:
             if pos:
                 pnl = (pos["entry_price"] - exec_price) * qty
                 self._balance += (qty * pos["entry_price"]) + pnl
-                self._trades.append({
+                trade = {
                     "symbol": symbol,
                     "entry_price": pos["entry_price"],
                     "exit_price": exec_price,
@@ -533,7 +536,9 @@ class PaperExecutionAgent:
                     "pnl": pnl,
                     "retorno": pos["entry_price"] / exec_price - 1,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
+                }
+                self._trades.append(trade)
+                self._log_trade(trade)
 
         order_info = {
             "order_id": order_id,
@@ -598,6 +603,10 @@ class PaperExecutionAgent:
         log_file = self._log_dir / "paper_orders.jsonl"
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(order_info, default=str) + "\n")
+
+    def _log_trade(self, trade_info: dict) -> None:
+        with open(self._trades_log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(trade_info, default=str) + "\n")
 
     def get_execution_log(self) -> pd.DataFrame:
         log_file = self._log_dir / "paper_orders.jsonl"

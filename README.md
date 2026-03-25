@@ -1,4 +1,4 @@
-# Trading AI – Proyecto de aprendizaje
+# Tradedan – Proyecto de aprendizaje
 
 Proyecto paso a paso para aprender **Python** y **trading** desde cero, usando **Git** y **GitHub**. Pensado para desarrolladores con experiencia en PHP/MySQL que quieren pasar a Python aplicado al análisis de mercados.
 
@@ -31,6 +31,30 @@ pip install -r requirements.txt
 
 # Ejecutar la primera lección
 python lessons/01_python_basico/ejercicio.py
+```
+
+## Dashboard web (local)
+
+Hay un dashboard web local en `src/web/` para **ver logs** y **controlar el bot** (start/stop) desde el navegador.
+
+### Ejecutar el dashboard
+
+```bash
+source .venv/bin/activate
+uvicorn src.web.app:app --reload --port 8000
+```
+
+Abre `http://localhost:8000`.
+
+### Control del bot desde el dashboard
+
+- **Start (paper)**: arranca `python -m scripts.run_live --paper` en segundo plano y escribe la salida en `logs/bot_web.log`.
+- **Stop**: envía `SIGTERM` al proceso del bot.
+
+Si prefieres arrancar el bot tú mismo (sin dashboard), sigue usando:
+
+```bash
+python -m scripts.run_live --paper
 ```
 
 ## Estructura del proyecto

@@ -1,0 +1,3 @@
+{"timestamp": "2026-03-25T08:18:02.353366+00:00", "symbol": "BTCUSDT", "strategy": "rsi_cross", "candle_time": "2026-03-25 08:00:00", "close_price": 70930.0, "rsi": 55.413401380746095, "signal": null, "mode": "PAPER"}
+{"timestamp": "2026-03-25T15:27:31.518427+00:00", "symbol": "BTCUSDT", "strategy": "rsi_cross", "candle_time": "2026-03-25 12:00:00", "close_price": 70865.6, "rsi": 53.66346237935257, "signal": null, "mode": "PAPER"}
+{"timestamp": "2026-03-25T16:00:31.839930+00:00", "symbol": "BTCUSDT", "strategy": "rsi_cross", "candle_time": "2026-03-25 16:00:00", "close_price": 70822.1, "rsi": 53.35090735544963, "signal": null, "mode": "PAPER"}
