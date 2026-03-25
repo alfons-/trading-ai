@@ -1,7 +1,7 @@
-"""Email notifications for trade executions.
+"""Email notifications for trade executions (stdlib only: smtplib + email.mime).
 
-Reads SMTP configuration from environment variables.  When ``NOTIFY_EMAILS``
-is unset or empty the module is a silent no-op so the bot never breaks.
+SMTP settings: ``SMTP_HOST``, ``SMTP_PORT``, ``SMTP_USER``, ``SMTP_PASS``.
+When ``recipients`` is empty, returns immediately (opt-in, silent).
 """
 
 from __future__ import annotations
@@ -9,26 +9,34 @@ from __future__ import annotations
 import os
 import smtplib
 import threading
-from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
 
-def _build_message(order_info: dict[str, Any], recipients: list[str], sender: str) -> MIMEMultipart:
-    side = str(order_info.get("side", "TRADE")).upper()
-    symbol = order_info.get("symbol", "???")
-    price = order_info.get("price", "?")
+def _format_price(price: Any) -> str:
+    if price is None or price == "":
+        return "?"
+    try:
+        return f"{float(price):.2f}"
+    except (TypeError, ValueError):
+        return str(price)
 
-    subject = f"[Tradedan] {side} {symbol} @ {price}"
+
+def _build_message(order_info: dict[str, Any], recipients: list[str], sender: str) -> MIMEText:
+    side_raw = str(order_info.get("side", "TRADE"))
+    side = "BUY" if side_raw.lower() == "buy" else "SELL" if side_raw.lower() == "sell" else side_raw.upper()
+    symbol = order_info.get("symbol", "???")
+    price = _format_price(order_info.get("price"))
+
+    subject = f"[Trading AI] {side} {symbol} @ {price}"
 
     lines = [f"{k}: {v}" for k, v in order_info.items()]
     body = "\n".join(lines)
 
-    msg = MIMEMultipart()
+    msg = MIMEText(body, "plain", "utf-8")
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain", "utf-8"))
     return msg
 
 
@@ -39,31 +47,31 @@ def _send(order_info: dict[str, Any], recipients: list[str]) -> None:
     password = os.getenv("SMTP_PASS", "")
 
     if not user or not password:
-        print("[Email] SMTP_USER / SMTP_PASS not configured – skipping notification.")
         return
 
-    msg = _build_message(order_info, recipients, sender=user)
-
     try:
+        msg = _build_message(order_info, recipients, sender=user)
         with smtplib.SMTP(host, port, timeout=15) as server:
             server.starttls()
             server.login(user, password)
             server.sendmail(user, recipients, msg.as_string())
-        print(f"[Email] Notification sent to {', '.join(recipients)}")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[Email] Failed to send notification: {exc}")
+    except Exception as exc:  # noqa: BLE001 — must not propagate to caller thread
+        print(f"[Email] Failed to send: {exc}")
 
 
-def send_trade_email(order_info: dict[str, Any]) -> None:
-    """Send an email notification about a trade to all configured recipients.
+def send_trade_email(order_info: dict[str, Any], recipients: list[str]) -> None:
+    """Notify configured addresses about a trade in a daemon thread (non-blocking).
 
-    Reads ``NOTIFY_EMAILS`` (comma-separated) from the environment.
-    Runs in a daemon thread so the trading loop is never blocked.
+    No-op if ``recipients`` is empty or order ``ret_code`` is non-zero.
+    Never raises: SMTP work runs in a thread and errors are swallowed.
     """
-    raw = os.getenv("NOTIFY_EMAILS", "")
-    recipients = [e.strip() for e in raw.split(",") if e.strip()]
     if not recipients:
         return
+    if order_info.get("ret_code", 0) != 0:
+        return
 
-    thread = threading.Thread(target=_send, args=(order_info, recipients), daemon=True)
-    thread.start()
+    try:
+        thread = threading.Thread(target=_send, args=(order_info, recipients), daemon=True)
+        thread.start()
+    except Exception:
+        pass

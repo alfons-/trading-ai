@@ -17,7 +17,6 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import copy
 import os
 import json
 import signal
@@ -33,19 +32,29 @@ import yaml
 from dotenv import load_dotenv
 from ta.momentum import RSIIndicator
 
-from src.notifications.email import send_trade_email
-
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.agents.data_agent import DEFAULT_BYBIT_CATEGORY, DataAgent
 from src.agents.execution_agent import ExecutionAgent, PaperExecutionAgent
+from src.agents.regime_agent import (
+    REGIME_BEAR,
+    REGIME_BULL,
+    REGIME_SIDEWAYS,
+    RegimeAgent,
+)
+from src.notifications.email import send_trade_email
 
 _running = True
 
 _SIGNALS_DIR = ROOT / "data" / "signal_logs"
 _SIGNALS_FILE = _SIGNALS_DIR / "signals.jsonl"
+
+
+def _notify_email_recipients() -> list[str]:
+    raw = os.getenv("NOTIFY_EMAILS", "")
+    return [e.strip() for e in raw.split(",") if e.strip()]
 
 
 def log_signal(record: dict[str, Any]) -> None:
@@ -101,6 +110,17 @@ def create_execution_agent(cfg: dict, paper: bool = False) -> ExecutionAgent | P
     )
 
 
+def _ml_all_timeframes(ml_cfg: dict[str, Any]) -> list[str]:
+    base = ml_cfg.get("timeframe_base") or ml_cfg.get("timeframe", "4h")
+    tfs: list[str] = [base]
+    for _name, h in (ml_cfg.get("higher_timeframes") or {}).items():
+        if h.get("enabled") and h.get("timeframe"):
+            tf = str(h["timeframe"])
+            if tf not in tfs:
+                tfs.append(tf)
+    return tfs
+
+
 def fetch_latest_data(
     symbol: str, cfg: dict, timeframe: str | None = None
 ) -> pd.DataFrame:
@@ -115,6 +135,22 @@ def fetch_latest_data(
     rsi_period = cfg.get("rsi_cross", {}).get("rsi_period", 14)
     df["rsi"] = RSIIndicator(close=df["cierre"], window=rsi_period).rsi()
     return df
+
+
+def fetch_multi_tf_for_ml(
+    symbol: str, exec_cfg: dict[str, Any], ml_cfg: dict[str, Any]
+) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Descarga base + higher TFs como en el orquestador (merge_asof en features)."""
+    agent = DataAgent(category=exec_cfg.get("bybit_category", DEFAULT_BYBIT_CATEGORY))
+    days = int(exec_cfg.get("loop", {}).get("history_days", 30))
+    dfs_by_tf: dict[str, pd.DataFrame] = {}
+    for tf in _ml_all_timeframes(ml_cfg):
+        d = agent.get_ohlcv(symbol=symbol, timeframe=tf, days=days, force=True)
+        d = d.sort_values("fecha").reset_index(drop=True)
+        d["fecha"] = pd.to_datetime(d["fecha"])
+        dfs_by_tf[tf] = d
+    base = ml_cfg.get("timeframe_base") or ml_cfg.get("timeframe", "4h")
+    return dfs_by_tf[base], dfs_by_tf
 
 
 def check_rsi_cross_signal(df: pd.DataFrame, cfg: dict) -> str | None:
@@ -155,28 +191,40 @@ def check_rsi_cross_signal(df: pd.DataFrame, cfg: dict) -> str | None:
     return None
 
 
-def check_xgboost_signal(df: pd.DataFrame, cfg: dict) -> str | None:
-    """
-    Genera señal usando modelo XGBoost entrenado.
+def _merge_regime_thresholds(exec_xgb: dict[str, Any], ml_cfg: dict[str, Any], regime: str) -> dict[str, Any]:
+    rb = (ml_cfg.get("regime_backtest") or {}).get(regime, {}) or {}
+    ex = (exec_xgb.get(regime) or {}) if isinstance(exec_xgb.get(regime), dict) else {}
+    out = {**rb, **ex}
+    return out
 
-    Returns: "buy", "sell", o None
+
+def check_xgboost_signal(
+    df: pd.DataFrame,
+    cfg: dict[str, Any],
+    symbol: str,
+    dfs_by_tf: dict[str, pd.DataFrame] | None = None,
+) -> str | None:
+    """
+    Genera señal usando modelo XGBoost entrenado (una o tres cabezas por régimen).
+
+    Returns: "buy", "sell", "open_short", o None
     """
     import joblib
+
     from src.agents.feature_agent import FeatureAgent
 
     xgb_cfg = cfg.get("xgboost", {})
-    model_path = ROOT / xgb_cfg.get("model_path", "models/xgb_model.joblib")
-
-    if not model_path.exists():
-        print(f"[LiveRunner] Modelo no encontrado: {model_path}")
-        print("  Ejecuta primero: python -m scripts.run_experiment")
-        return None
 
     ml_config_path = ROOT / xgb_cfg.get("config_path", "configs/default.yaml")
     with open(ml_config_path, encoding="utf-8") as f:
         ml_cfg = yaml.safe_load(f)
 
+    multi_regime = xgb_cfg.get("multi_regime")
+    if multi_regime is None:
+        multi_regime = bool(ml_cfg.get("multi_regime", False))
+
     feat_cfg = ml_cfg["features"]
+    ht_cfg = ml_cfg.get("higher_timeframes", {})
     feature_agent = FeatureAgent(
         sma_corta=feat_cfg["sma_corta"],
         sma_larga=feat_cfg["sma_larga"],
@@ -185,27 +233,89 @@ def check_xgboost_signal(df: pd.DataFrame, cfg: dict) -> str | None:
         return_lags=feat_cfg["return_lags"],
         macd_cfg=feat_cfg.get("macd", {}),
         sr_cfg=feat_cfg.get("support_resistance", {}),
+        higher_timeframes_cfg=ht_cfg,
     )
 
-    df_feat = feature_agent.build_features(df)
+    use_higher = any(h.get("enabled") for h in ht_cfg.values()) if ht_cfg else False
+    higher_dfs = dfs_by_tf if use_higher else None
+    df_feat = feature_agent.build_features(df, higher_dfs=higher_dfs)
     feature_cols = feature_agent.feature_names
+
+    if multi_regime:
+        reg_cfg = ml_cfg.get("regimes", {})
+        regime_agent = RegimeAgent(
+            adx_trending_min=float(reg_cfg.get("adx_trending_min", 20)),
+            trend_column=str(reg_cfg.get("trend_column", "weekly_trend")),
+            adx_column=str(reg_cfg.get("adx_column", "weekly_adx")),
+        )
+        df_feat = regime_agent.assign_regime(df_feat)
+
     df_clean = df_feat.dropna(subset=feature_cols)
 
     if df_clean.empty:
         return None
 
     last_row = df_clean.iloc[[-1]][feature_cols]
+
+    if not multi_regime:
+        model_path = ROOT / xgb_cfg.get("model_path", "models/xgb_model.joblib")
+        if not model_path.exists():
+            print(f"[LiveRunner] Modelo no encontrado: {model_path}")
+            print("  Ejecuta primero: python -m scripts.run_experiment")
+            return None
+        model = joblib.load(model_path)
+        prob = float(model.predict_proba(last_row)[0, 1])
+        buy_thresh = float(xgb_cfg.get("prob_buy_threshold", 0.55))
+        sell_thresh = float(xgb_cfg.get("prob_sell_threshold", 0.45))
+        print(f"  XGBoost prob(up)={prob:.4f} | buy>{buy_thresh} sell<{sell_thresh}")
+        if prob > buy_thresh:
+            return "buy"
+        if prob < sell_thresh:
+            return "sell"
+        return None
+
+    regime = str(df_clean["regime"].iloc[-1])
+
+    rm_cfg = ml_cfg.get("regime_models", {})
+    path_tpl = str(rm_cfg.get("path_template", "models/xgb_{regime}_{symbol}.joblib"))
+    model_path = ROOT / path_tpl.format(regime=regime, symbol=symbol)
+    if not model_path.exists():
+        print(f"[LiveRunner] Modelo multi-régimen no encontrado: {model_path} (régimen={regime})")
+        print("  Entrena con multi_regime: true en el YAML de ML y run_experiment.")
+        return None
+
     model = joblib.load(model_path)
-    prob = model.predict_proba(last_row)[0, 1]
+    prob = float(model.predict_proba(last_row)[0, 1])
 
-    buy_thresh = xgb_cfg.get("prob_buy_threshold", 0.55)
-    sell_thresh = xgb_cfg.get("prob_sell_threshold", 0.45)
+    if regime == REGIME_BULL:
+        th = _merge_regime_thresholds(xgb_cfg, ml_cfg, "bull")
+        buy_t = float(th.get("prob_buy_threshold", xgb_cfg.get("prob_buy_threshold", 0.55)))
+        sell_t = float(th.get("prob_sell_threshold", xgb_cfg.get("prob_sell_threshold", 0.45)))
+        print(f"  XGB [{regime}] prob={prob:.4f} | buy>{buy_t} sell<{sell_t}")
+        if prob > buy_t:
+            return "buy"
+        if prob < sell_t:
+            return "sell"
+        return None
 
-    print(f"  XGBoost prob(up)={prob:.4f} | buy>{buy_thresh} sell<{sell_thresh}")
+    if regime == REGIME_BEAR:
+        th = _merge_regime_thresholds(xgb_cfg, ml_cfg, "bear")
+        o_t = float(th.get("prob_short_open_threshold", 0.55))
+        c_t = float(th.get("prob_short_close_threshold", 0.45))
+        print(f"  XGB [{regime}] prob(short-signal)={prob:.4f} | open>{o_t} close<{c_t}")
+        if prob > o_t:
+            return "open_short"
+        if prob < c_t:
+            return "sell"
+        return None
 
-    if prob > buy_thresh:
+    th = _merge_regime_thresholds(xgb_cfg, ml_cfg, "sideways")
+    buy_t = float(th.get("prob_buy_threshold", 0.55))
+    sell_t = float(th.get("prob_sell_threshold", 0.45))
+    print(f"  XGB [{regime}] prob={prob:.4f} | buy>{buy_t} sell<{sell_t}")
+    if prob > buy_t:
         return "buy"
-    elif prob < sell_thresh:
+    if prob < sell_t:
         return "sell"
     return None
 
@@ -216,18 +326,26 @@ def execute_signal(
     agent: ExecutionAgent | PaperExecutionAgent,
     cfg: dict,
 ) -> None:
-    """Ejecuta una señal de compra o venta."""
+    """Ejecuta compra, venta, apertura de short o cierre de posición."""
     risk_cfg = cfg.get("risk", {})
     leverage = int(risk_cfg.get("leverage", 1))
     sl_pct = float(risk_cfg.get("stop_loss_pct", 0.03))
     tp_pct = float(risk_cfg.get("take_profit_pct", 0.10))
     max_positions = int(risk_cfg.get("max_open_positions", 1))
+    allow_flip = bool(risk_cfg.get("allow_long_and_short_same_symbol", False))
 
     positions = agent.get_positions(symbol)
     ticker = agent.get_ticker(symbol)
     price = ticker["last"]
 
     if signal_type == "buy":
+        if not allow_flip:
+            for pos in list(agent.get_positions(symbol)):
+                if pos.get("side") == "Sell":
+                    result = agent.close_short(symbol=symbol, qty=pos["size"])
+                    send_trade_email(result, _notify_email_recipients())
+            positions = agent.get_positions(symbol)
+
         if len(positions) >= max_positions:
             print(f"  Ya hay {len(positions)} posición(es) abierta(s). Señal ignorada.")
             return
@@ -253,9 +371,45 @@ def execute_signal(
             stop_loss=sl_price,
             take_profit=tp_price,
         )
-        send_trade_email(result)
+        send_trade_email(result, _notify_email_recipients())
+
+    elif signal_type == "open_short":
+        if not allow_flip:
+            for pos in list(agent.get_positions(symbol)):
+                if pos.get("side") == "Buy":
+                    result = agent.close_long(symbol=symbol, qty=pos["size"])
+                    send_trade_email(result, _notify_email_recipients())
+            positions = agent.get_positions(symbol)
+
+        if len(positions) >= max_positions:
+            print(f"  Ya hay {len(positions)} posición(es) abierta(s). Señal open_short ignorada.")
+            return
+
+        capital_pct = float(risk_cfg.get("capital_pct_per_trade", 0))
+        if capital_pct > 0:
+            balance = agent.get_balance()
+            capital = balance["available"] * capital_pct
+        else:
+            capital = float(risk_cfg.get("capital_per_trade_usdt", 100))
+
+        qty = agent.calculate_qty(symbol, capital, leverage=leverage, price=price)
+
+        sl_price = round(price * (1 + sl_pct), 2) if sl_pct > 0 else None
+        tp_price = round(price * (1 - tp_pct), 2) if tp_pct > 0 else None
+
+        if leverage > 1:
+            agent.set_leverage(symbol, leverage)
+
+        result = agent.open_short(
+            symbol=symbol,
+            qty=qty,
+            stop_loss=sl_price,
+            take_profit=tp_price,
+        )
+        send_trade_email(result, _notify_email_recipients())
 
     elif signal_type == "sell":
+        positions = agent.get_positions(symbol)
         if not positions:
             print(f"  Sin posición abierta en {symbol}. Señal de venta ignorada.")
             return
@@ -267,7 +421,7 @@ def execute_signal(
                 result = agent.close_short(symbol=symbol, qty=pos["size"])
             else:
                 continue
-            send_trade_email(result)
+            send_trade_email(result, _notify_email_recipients())
 
 
 def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
@@ -310,7 +464,16 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
                     print(f"  Bot detenido por seguridad. Revisa la estrategia antes de reiniciar.")
                     break
 
-            df = fetch_latest_data(symbol, cfg, timeframe=cfg.get("timeframe_base", "4h"))
+            if strategy == "xgboost":
+                ml_cfg_path = ROOT / cfg.get("xgboost", {}).get("config_path", "configs/default.yaml")
+                ml_cfg = load_config(ml_cfg_path)
+                df, dfs_tf = fetch_multi_tf_for_ml(symbol, cfg, ml_cfg)
+                rsi_period = cfg.get("rsi_cross", {}).get("rsi_period", 14)
+                df = df.copy()
+                df["rsi"] = RSIIndicator(close=df["cierre"], window=rsi_period).rsi()
+            else:
+                df = fetch_latest_data(symbol, cfg, timeframe=cfg.get("timeframe_base", "4h"))
+                dfs_tf = None
 
             if df.empty:
                 print("[LiveRunner] Sin datos. Reintentando...")
@@ -343,7 +506,7 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
                             print(f"  RSI 1D cruce ↓ {exit_lvl} → señal de salida")
 
             elif strategy == "xgboost":
-                signal = check_xgboost_signal(df, cfg)
+                signal = check_xgboost_signal(df, cfg, symbol, dfs_by_tf=dfs_tf)
             else:
                 print(f"[LiveRunner] Estrategia desconocida: {strategy}")
 
@@ -397,6 +560,8 @@ def main() -> None:
     ap.add_argument("--status", action="store_true", help="Solo mostrar estado de cuenta")
     args = ap.parse_args()
 
+    load_dotenv(ROOT / ".env")
+
     cfg = load_config(args.config)
     if args.symbol:
         cfg["symbol"] = args.symbol
@@ -409,8 +574,17 @@ def main() -> None:
         return
 
     if args.once:
-        df = fetch_latest_data(symbol, cfg)
         strategy = cfg.get("strategy", "rsi_cross")
+        dfs_tf = None
+        if strategy == "xgboost":
+            ml_cfg_path = ROOT / cfg.get("xgboost", {}).get("config_path", "configs/default.yaml")
+            ml_cfg = load_config(ml_cfg_path)
+            df, dfs_tf = fetch_multi_tf_for_ml(symbol, cfg, ml_cfg)
+            rsi_period = cfg.get("rsi_cross", {}).get("rsi_period", 14)
+            df = df.copy()
+            df["rsi"] = RSIIndicator(close=df["cierre"], window=rsi_period).rsi()
+        else:
+            df = fetch_latest_data(symbol, cfg)
 
         rsi_val = df.iloc[-1].get("rsi", float("nan"))
         price = df.iloc[-1]["cierre"]
@@ -420,7 +594,7 @@ def main() -> None:
         if strategy == "rsi_cross":
             signal = check_rsi_cross_signal(df, cfg)
         elif strategy == "xgboost":
-            signal = check_xgboost_signal(df, cfg)
+            signal = check_xgboost_signal(df, cfg, symbol, dfs_by_tf=dfs_tf)
 
         if signal:
             print(f"  *** SEÑAL: {signal.upper()} ***")

@@ -58,6 +58,38 @@ xgboost:
   eval_metric: "logloss"
   early_stopping_rounds: 20
 
+# ── Multi-régimen (tres XGB: bull / bear / sideways) ──────────
+# Si multi_regime: true, se entrena un modelo por régimen y el backtest/live
+# usan el modelo acorde a la vela actual.
+multi_regime: false
+
+regimes:
+  adx_trending_min: 20
+  trend_column: weekly_trend
+  adx_column: weekly_adx
+
+# Targets por régimen (horizon/threshold heredan de target:)
+regime_targets:
+  # Sideways: target=1 si abs(retorno_futuro) < range_threshold
+  range_threshold: 0.003
+
+regime_models:
+  path_template: "models/xgb_{regime}_{symbol}.joblib"
+  min_samples: 500
+
+# Umbrales de backtest cuando multi_regime (long / short / sideways)
+regime_backtest:
+  min_hold_bars: 0
+  bull:
+    prob_buy_threshold: 0.55
+    prob_sell_threshold: 0.45
+  bear:
+    prob_short_open_threshold: 0.55
+    prob_short_close_threshold: 0.45
+  sideways:
+    prob_buy_threshold: 0.55
+    prob_sell_threshold: 0.45
+
 # ── Backtest ──────────────────────────────────────────────────
 backtest:
   prob_buy_threshold: 0.55    # prob(subida) > esto → comprar

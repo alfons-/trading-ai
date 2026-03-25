@@ -100,7 +100,7 @@
 </head>
 <body>
   <h1>Tradedan Dashboard</h1>
-  <p class="subtitle">Bot control + signals & paper orders – auto-refresh every 3 s</p>
+  <p class="subtitle">Bot control + signals & paper orders – auto-refresh every 30 s</p>
   <p class="refresh-info">Last update: <span id="lastUpdate">–</span></p>
 
   <div class="section">
@@ -301,7 +301,7 @@
     }
 
     refresh();
-    setInterval(refresh, 3000);
+    setInterval(refresh, 30000);
 
     document.getElementById("btnStart").addEventListener("click", startBot);
     document.getElementById("btnStop").addEventListener("click", stopBot);

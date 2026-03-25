@@ -1,0 +1,79 @@
+# Experimento: tres XGBoost (bull / bear / sideways)
+# Uso:
+#   python -m scripts.run_experiment --config configs/regime_experiment.yaml --symbol BTCUSDT
+
+bybit_category: "linear"
+
+symbols:
+  - BTCUSDT
+
+timeframe_base: "4h"
+history_days: 1095
+
+# Forzar descarga API (ignorar CSV antiguo con menos histórico)
+force_refresh_data: true
+
+higher_timeframes:
+  daily:
+    timeframe: "1D"
+    enabled: true
+    sma_window: 20
+  weekly:
+    timeframe: "1W"
+    enabled: true
+    trend_sma_window: 20
+
+features:
+  sma_corta: 10
+  sma_larga: 50
+  rsi_window: 14
+  volatility_window: 20
+  return_lags: [1, 2, 3, 5]
+
+target:
+  horizon: 5
+  threshold: 0.005
+
+split:
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+xgboost:
+  n_estimators: 200
+  max_depth: 4
+  learning_rate: 0.05
+  subsample: 0.8
+  colsample_bytree: 0.8
+  eval_metric: "logloss"
+  early_stopping_rounds: 20
+
+multi_regime: true
+
+regimes:
+  adx_trending_min: 20
+  trend_column: weekly_trend
+  adx_column: weekly_adx
+
+regime_targets:
+  range_threshold: 0.003
+
+regime_models:
+  path_template: "models/xgb_{regime}_{symbol}.joblib"
+  min_samples: 400
+
+regime_backtest:
+  min_hold_bars: 0
+  bull:
+    prob_buy_threshold: 0.55
+    prob_sell_threshold: 0.45
+  sideways:
+    prob_buy_threshold: 0.55
+    prob_sell_threshold: 0.45
+  bear:
+    prob_short_open_threshold: 0.55
+    prob_short_close_threshold: 0.45
+
+backtest:
+  prob_buy_threshold: 0.55
+  prob_sell_threshold: 0.45

@@ -108,6 +108,10 @@ El sistema descarga, para cada símbolo, **tres CSV** vía `DataAgent`:
 
 Configuración en `configs/default.yaml` (sección `timeframe_base` y `higher_timeframes`).
 
+### Tres modelos XGBoost por régimen (opcional)
+
+En `configs/default.yaml` puedes activar `multi_regime: true` para entrenar **tres** clasificadores (bull / bear / sideways) con el `RegimeAgent` (tendencia semanal + `weekly_adx`). Los targets por régimen se definen en `regime_targets`; los modelos se guardan según `regime_models.path_template` (p. ej. `models/xgb_bull_BTCUSDT.joblib`). Flujo: `python -m scripts.run_experiment` con esa config, luego en live/paper pon `strategy: xgboost` y, si hace falta, `multi_regime: true` en el bloque `xgboost` de `configs/execution.yaml` (o deja que se lea del YAML de ML vía `config_path`). El script `run_live` descarga los mismos timeframes que el experimento, construye features con `merge_asof`, elige el `.joblib` del régimen actual y emite `buy`/`sell` o `open_short` en bear (SL/TP invertidos). Por defecto no se mezclan long y short en el mismo símbolo: se cierra la pierna opuesta salvo `risk.allow_long_and_short_same_symbol: true`.
+
 ## Estrategia RSI solo cruces en 4h (mínima)
 
 `scripts/strategy_rsi_cross_4h.py` + `configs/strategy_rsi_cross.yaml`:

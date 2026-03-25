@@ -34,6 +34,9 @@ xgboost:
   prob_buy_threshold: 0.55
   prob_sell_threshold: 0.45
   config_path: "configs/default.yaml"   # config del pipeline ML para features
+  # multi_regime: true   # si default.yaml tiene multi_regime: true (tres .joblib por símbolo)
+  # bull: { prob_buy_threshold: 0.55, prob_sell_threshold: 0.45 }
+  # bear: { prob_short_open_threshold: 0.55, prob_short_close_threshold: 0.45 }
 
 # ── Gestión de riesgo ─────────────────────────────
 risk:
@@ -43,13 +46,14 @@ risk:
   stop_loss_pct: 0.03            # -3% desde precio de entrada
   take_profit_pct: 0.10          # +10% desde precio de entrada
   max_open_positions: 1          # máximo de posiciones simultáneas
+  # allow_long_and_short_same_symbol: false  # por defecto: cerrar la pierna opuesta antes de invertir
   max_daily_loss_usdt: 10        # si pierde 10 USDT en el día, el bot se detiene
 
 # ── Loop de ejecución ─────────────────────────────
 loop:
-  check_interval_seconds: 30     # cada cuánto comprobar señales
+  check_interval_seconds: 300   # cada 5 min — suficiente para velas de 4h
   lookback_bars: 100             # velas históricas a cargar para indicadores
-  history_days: 30               # días de datos para calcular RSI/features
+  history_days: 153              # ~5 meses de datos (Bybit) para RSI / estudio de tendencia
   log_interval_minutes: 15       # cada cuánto imprimir estado
 
 # ── Paper trading local ───────────────────────────

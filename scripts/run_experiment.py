@@ -31,17 +31,41 @@ def main():
         print("\n=== Resumen de todos los experimentos ===")
         for r in results:
             print(f"\n{r['symbol']}:")
-            print(f"  Test accuracy: {r['test_metrics']['test_accuracy']:.4f}")
-            print(f"  Test AUC:      {r['test_metrics']['test_auc']:.4f}")
-            print(f"  Backtest ret:  {r['backtest']['retorno_total']:.4f}")
-            print(f"  Buy & hold:    {r['backtest']['retorno_buyhold']:.4f}")
+            if r.get("multi_regime"):
+                for reg, info in r.get("regimes", {}).items():
+                    if info.get("skipped"):
+                        print(f"  [{reg}] omitido (n_train={info.get('n_train', 0)})")
+                    else:
+                        tm = info.get("test_metrics") or {}
+                        print(
+                            f"  [{reg}] test acc={tm.get('test_accuracy', float('nan')):.4f} "
+                            f"AUC={tm.get('test_auc', float('nan')):.4f}"
+                        )
+                print(f"  Backtest ret:  {r['backtest']['retorno_total']:.4f}")
+            else:
+                print(f"  Test accuracy: {r['test_metrics']['test_accuracy']:.4f}")
+                print(f"  Test AUC:      {r['test_metrics']['test_auc']:.4f}")
+                print(f"  Backtest ret:  {r['backtest']['retorno_total']:.4f}")
+                print(f"  Buy & hold:    {r['backtest']['retorno_buyhold']:.4f}")
     else:
         result = orchestrator.run(symbol=args.symbol)
         print(f"\nResultado final para {result['symbol']}:")
-        print(f"  Test accuracy: {result['test_metrics']['test_accuracy']:.4f}")
-        print(f"  Test AUC:      {result['test_metrics']['test_auc']:.4f}")
-        print(f"  Backtest ret:  {result['backtest']['retorno_total']:.4f}")
-        print(f"  Buy & hold:    {result['backtest']['retorno_buyhold']:.4f}")
+        if result.get("multi_regime"):
+            for reg, info in result.get("regimes", {}).items():
+                if info.get("skipped"):
+                    print(f"  [{reg}] omitido (n_train={info.get('n_train', 0)})")
+                else:
+                    tm = info.get("test_metrics") or {}
+                    print(
+                        f"  [{reg}] test acc={tm.get('test_accuracy', float('nan')):.4f} "
+                        f"AUC={tm.get('test_auc', float('nan')):.4f}"
+                    )
+            print(f"  Backtest ret:  {result['backtest']['retorno_total']:.4f}")
+        else:
+            print(f"  Test accuracy: {result['test_metrics']['test_accuracy']:.4f}")
+            print(f"  Test AUC:      {result['test_metrics']['test_auc']:.4f}")
+            print(f"  Backtest ret:  {result['backtest']['retorno_total']:.4f}")
+            print(f"  Buy & hold:    {result['backtest']['retorno_buyhold']:.4f}")
 
 
 if __name__ == "__main__":

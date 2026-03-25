@@ -57,6 +57,7 @@ class FeatureAgent:
                         features de contexto vía merge_asof.
         """
         df = df.copy()
+        df["fecha"] = pd.to_datetime(df["fecha"]).astype("datetime64[ns]")
 
         # ── Features del TF base ──
         add_sma(df, column="cierre", window=self.sma_corta, nombre_columna="sma_corta")
@@ -126,7 +127,7 @@ class FeatureAgent:
                 continue
 
             df_ht = higher_dfs[tf].copy()
-            df_ht["fecha"] = pd.to_datetime(df_ht["fecha"])
+            df_ht["fecha"] = pd.to_datetime(df_ht["fecha"]).astype("datetime64[ns]")
             df_ht = df_ht.sort_values("fecha").reset_index(drop=True)
             prefix = name  # "daily" o "weekly"
 
@@ -196,7 +197,7 @@ class FeatureAgent:
             else:
                 continue
 
-            df["fecha"] = pd.to_datetime(df["fecha"])
+            df["fecha"] = pd.to_datetime(df["fecha"]).astype("datetime64[ns]")
             df = df.sort_values("fecha").reset_index(drop=True)
             df = pd.merge_asof(
                 df,
