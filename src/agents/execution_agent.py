@@ -587,8 +587,12 @@ class PaperExecutionAgent:
     def calculate_qty(self, symbol: str, capital_usdt: float, leverage: int = 1, price: float | None = None) -> float:
         if price is None:
             price = self.get_ticker(symbol)["last"]
+        info = self.get_instrument_info(symbol)
+        qty_step = info.get("qty_step", 0.001)
+        min_qty = info.get("min_qty", 0.001)
         raw_qty = (capital_usdt * leverage) / price
-        return round(raw_qty, 3)
+        qty = max(min_qty, round(raw_qty / qty_step) * qty_step)
+        return round(qty, 8)
 
     def get_order_history(self, symbol: str, limit: int = 20) -> list[dict]:
         return self._trades[-limit:]

@@ -150,8 +150,18 @@ class BacktestAgent:
         p_close_s = float(bear.get("prob_short_close_threshold", 0.45))
         prob_buy_sw = float(ts.get("prob_buy_threshold", self.prob_buy))
         prob_sell_sw = float(ts.get("prob_sell_threshold", self.prob_sell))
+        sideways_mode = str(ts.get("mode", "trend_follow")).strip().lower()
+        support_zone = float(ts.get("support_zone_max", 0.35))
+        resistance_zone = float(ts.get("resistance_zone_min", 0.65))
+        sideways_prob_short = float(ts.get("prob_short_threshold", 0.45))
+        mid_exit_low = float(ts.get("mid_exit_low", 0.45))
+        mid_exit_high = float(ts.get("mid_exit_high", 0.55))
 
         sim = df[["fecha", "cierre", regime_col]].copy()
+        if "posicion_rango" in df.columns:
+            sim["posicion_rango"] = df["posicion_rango"].to_numpy()
+        else:
+            sim["posicion_rango"] = 0.5
         sim.rename(columns={regime_col: "regime"}, inplace=True)
         sim["prob"] = probas
 
@@ -197,15 +207,35 @@ class BacktestAgent:
                         bars_in_pos = 0
 
             elif reg == REGIME_SIDEWAYS:
-                if pos <= 0:
-                    if prob > prob_buy_sw:
-                        pos = 1
-                        bars_in_pos = 0
+                range_pos = float(sim.iloc[i]["posicion_rango"])
+                if sideways_mode == "mean_reversion":
+                    if pos == 0:
+                        if range_pos <= support_zone and prob > prob_buy_sw:
+                            pos = 1
+                            bars_in_pos = 0
+                        elif range_pos >= resistance_zone and prob < sideways_prob_short:
+                            pos = -1
+                            bars_in_pos = 0
+                    elif pos == 1:
+                        bars_in_pos += 1
+                        if bars_in_pos >= min_hold_bars and (range_pos >= mid_exit_high or prob < 0.50):
+                            pos = 0
+                            bars_in_pos = 0
+                    elif pos == -1:
+                        bars_in_pos += 1
+                        if bars_in_pos >= min_hold_bars and (range_pos <= mid_exit_low or prob > 0.50):
+                            pos = 0
+                            bars_in_pos = 0
                 else:
-                    bars_in_pos += 1
-                    if bars_in_pos >= min_hold_bars and prob < prob_sell_sw:
-                        pos = 0
-                        bars_in_pos = 0
+                    if pos <= 0:
+                        if prob > prob_buy_sw:
+                            pos = 1
+                            bars_in_pos = 0
+                    else:
+                        bars_in_pos += 1
+                        if bars_in_pos >= min_hold_bars and prob < prob_sell_sw:
+                            pos = 0
+                            bars_in_pos = 0
 
             position[i] = pos
 

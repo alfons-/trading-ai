@@ -55,7 +55,7 @@ class BotRunner:
         except psutil.Error:
             return False
 
-    def _tail_log(self, n: int = 80) -> list[str]:
+    def _tail_log(self, n: int = 20) -> list[str]:
         try:
             if not self.log_file.exists():
                 return []
@@ -74,7 +74,7 @@ class BotRunner:
         if paper:
             args.append("--paper")
 
-        out = open(self.log_file, "a", encoding="utf-8")
+        out = open(self.log_file, "w", encoding="utf-8")
         self._proc = subprocess.Popen(
             args,
             cwd=str(self.project_root),

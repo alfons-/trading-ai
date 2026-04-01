@@ -54,5 +54,5 @@ configs/execution.prod.yaml
 configs/*.local.yaml
 
 # launchd (los .plist instalados en ~/Library/LaunchAgents/ no están en el repo;
-# la plantilla scripts/com.trading-ai.deploy.plist sí se versiona)
+# la plantilla scripts/com.tradedan.deploy.plist sí se versiona)
 /*.plist

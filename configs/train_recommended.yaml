@@ -1,6 +1,13 @@
-# Experimento: tres XGBoost (bull / bear / sideways)
+# Config recomendada para entrenar XGBoost con la estrategia completa del proyecto:
+# 4h + 1D/1W, MACD, S/R por toques, tres modelos por régimen (bull/bear/sideways).
+#
 # Uso:
-#   python -m scripts.run_experiment --config configs/regime_experiment.yaml --symbol BTCUSDT
+#   Primera vez (refrescar CSV desde Bybit):
+#     Pon force_refresh_data: true, ejecuta, luego vuelve a false.
+#   python -m scripts.run_experiment --config configs/train_recommended.yaml --symbol BTCUSDT
+#
+# Modelos: models/xgb_{bull|bear|sideways}_<SYMBOL>.joblib
+# En live: configs/execution.yaml → strategy: xgboost, xgboost.config_path apuntando aquí.
 
 bybit_category: "linear"
 
@@ -8,10 +15,11 @@ symbols:
   - BTCUSDT
 
 timeframe_base: "4h"
-history_days: 4380
+# ~5 años: buen compromiso calidad/tiempo (warm-up S/R 360 + indicadores largos)
+history_days: 1825
 
-# Forzar descarga API (ignorar CSV antiguo con menos histórico)
-force_refresh_data: true
+# Tras una descarga completa con history_days alto, dejar en false
+force_refresh_data: false
 
 higher_timeframes:
   daily:
@@ -62,6 +70,8 @@ xgboost:
   colsample_bytree: 0.8
   eval_metric: "logloss"
   early_stopping_rounds: 20
+  # auto: neg/pos en train (cap 25). Número fijo si prefieres control manual.
+  scale_pos_weight: auto
 
 multi_regime: true
 
@@ -72,29 +82,22 @@ regimes:
 
 regime_targets:
   range_threshold: 0.003
-  sideways_target_mode: "bounce_up"
 
 regime_models:
   path_template: "models/xgb_{regime}_{symbol}.joblib"
-  min_samples: 300
+  min_samples: 400
 
 regime_backtest:
   min_hold_bars: 0
   bull:
     prob_buy_threshold: 0.55
     prob_sell_threshold: 0.45
-  sideways:
-    mode: "mean_reversion"
-    prob_buy_threshold: 0.55
-    prob_short_threshold: 0.45
-    prob_sell_threshold: 0.45
-    support_zone_max: 0.35
-    resistance_zone_min: 0.65
-    mid_exit_low: 0.45
-    mid_exit_high: 0.55
   bear:
     prob_short_open_threshold: 0.55
     prob_short_close_threshold: 0.45
+  sideways:
+    prob_buy_threshold: 0.55
+    prob_sell_threshold: 0.45
 
 backtest:
   prob_buy_threshold: 0.55

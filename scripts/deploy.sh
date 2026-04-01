@@ -3,7 +3,7 @@
 # Designed to run periodically via launchd on the production Mac.
 #
 # Usage (manual):   ./scripts/deploy.sh
-# Usage (launchd):  see com.trading-ai.deploy.plist
+# Usage (launchd):  see com.tradedan.deploy.plist
 
 set -euo pipefail
 

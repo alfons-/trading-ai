@@ -1,4 +1,6 @@
-# Tradedan – Proyecto de aprendizaje
+# Tradedan
+
+**Tradedan** es el nombre del proyecto. La carpeta del repositorio en local suele llamarse `tradedan`.
 
 Proyecto paso a paso para aprender **Python** y **trading** desde cero, usando **Git** y **GitHub**. Pensado para desarrolladores con experiencia en PHP/MySQL que quieren pasar a Python aplicado al análisis de mercados.
 
@@ -15,12 +17,43 @@ Proyecto paso a paso para aprender **Python** y **trading** desde cero, usando *
 - **Git** instalado.
 - Cuenta en **GitHub**.
 
+## Abrir en Cursor / VS Code
+
+Puedes abrir la carpeta `tradedan` o el archivo **`tradedan.code-workspace`** (el árbol de archivos mostrará el nombre **Tradedan**).
+
+### Si venías de la carpeta `trading-ai`
+
+- Abre siempre **`~/tradedan`** (o el enlace simbólico, si lo creas tú en terminal).
+- Si el `.venv` te da error de intérprete (`trading-ai/.venv/...` inexistente), recrea el entorno en la nueva ruta:
+
+```bash
+cd ~/tradedan
+rm -rf .venv
+# Usa Python 3.10+ (en Mac con Homebrew suele ser /opt/homebrew/bin/python3.12).
+# El `python3` del sistema a veces es 3.9 y no cumple requirements.txt.
+/opt/homebrew/bin/python3.12 -m venv .venv   # Mac Intel: /usr/local/bin/python3.12
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Si solo quieres **arreglar rutas rotas** sin borrar el venv:  
+`/opt/homebrew/bin/python3.12 -m venv --clear .venv` y luego `pip install -r requirements.txt`.
+
+- Opcional: sustituir una carpeta vacía `~/trading-ai` por un enlace al repo actual (ejecutar en tu Mac, fuera de Cursor si falla el permiso):
+
+```bash
+rm -rf ~/trading-ai
+ln -s ~/tradedan ~/trading-ai
+```
+
+- Si el **prompt del terminal** sigue mostrando `trading-ai`, Cursor tiene abierta esa ruta (o un enlace con ese nombre). Solución: **Archivo → Abrir carpeta…** y elige **`~/tradedan`**, o en el terminal ejecuta `cd ~/tradedan`. Si usas un enlace `~/trading-ai` → `~/tradedan` y quieres ver `tradedan` en el prompt, en zsh puedes activar `setopt CHASE_LINKS` en tu `~/.zshrc` para que `cd` resuelva el destino real del enlace.
+
 ## Inicio rápido
 
 ```bash
 # Clonar (o ya estás en el repo)
-git clone https://github.com/TU_USUARIO/trading-ai.git
-cd trading-ai
+git clone https://github.com/TU_USUARIO/tradedan.git
+cd tradedan
 
 # Entorno virtual
 python3 -m venv .venv
@@ -60,7 +93,7 @@ python -m scripts.run_live --paper
 ## Estructura del proyecto
 
 ```
-trading-ai/
+tradedan/
 ├── README.md                 # Este archivo
 ├── requirements.txt          # Dependencias Python
 ├── docs/
@@ -100,17 +133,25 @@ Sigue el plan detallado en **[docs/GUIA_APRENDIZAJE.md](docs/GUIA_APRENDIZAJE.md
 
 El sistema descarga, para cada símbolo, **tres CSV** vía `DataAgent`:
 
-| Timeframe | Archivo generado | Uso |
-|-----------|-----------------|-----|
-| 4h | `data/bybit/BTCUSDT_4h.csv` | TF base: señales de entrada y modelo |
-| 1D | `data/bybit/BTCUSDT_1D.csv` | Contexto diario / horizonte de salida |
-| 1W | `data/bybit/BTCUSDT_1W.csv` | Filtro de tendencia de mercado |
+| Timeframe | Archivo generado.           | Uso |
+|-----------|-----------------------------|-----|
+| 4h        | `data/bybit/BTCUSDT_4h.csv` | TF base: señales de entrada y modelo |
+| 1D        | `data/bybit/BTCUSDT_1D.csv` | Contexto diario / horizonte de salida |
+| 1W        | `data/bybit/BTCUSDT_1W.csv` | Filtro de tendencia de mercado |
 
 Configuración en `configs/default.yaml` (sección `timeframe_base` y `higher_timeframes`).
 
 ### Tres modelos XGBoost por régimen (opcional)
 
-En `configs/default.yaml` puedes activar `multi_regime: true` para entrenar **tres** clasificadores (bull / bear / sideways) con el `RegimeAgent` (tendencia semanal + `weekly_adx`). Los targets por régimen se definen en `regime_targets`; los modelos se guardan según `regime_models.path_template` (p. ej. `models/xgb_bull_BTCUSDT.joblib`). Flujo: `python -m scripts.run_experiment` con esa config, luego en live/paper pon `strategy: xgboost` y, si hace falta, `multi_regime: true` en el bloque `xgboost` de `configs/execution.yaml` (o deja que se lea del YAML de ML vía `config_path`). El script `run_live` descarga los mismos timeframes que el experimento, construye features con `merge_asof`, elige el `.joblib` del régimen actual y emite `buy`/`sell` o `open_short` en bear (SL/TP invertidos). Por defecto no se mezclan long y short en el mismo símbolo: se cierra la pierna opuesta salvo `risk.allow_long_and_short_same_symbol: true`.
+En `configs/default.yaml` puedes activar `multi_regime: true` para entrenar **tres** clasificadores (bull / bear / sideways) 
+con el `RegimeAgent` (tendencia semanal + `weekly_adx`).
+Los targets por régimen se definen en `regime_targets`; 
+los modelos se guardan según `regime_models.path_template` (p. ej. `models/xgb_bull_BTCUSDT.joblib`). 
+Flujo: `python -m scripts.run_experiment` con esa config, 
+luego en live/paper pon `strategy: xgboost` y, 
+si hace falta, `multi_regime: true` en el bloque `xgboost` de `configs/execution.yaml` (o deja que se lea del YAML de ML vía `config_path`). 
+El script `run_live` descarga los mismos timeframes que el experimento, construye features con `merge_asof`, elige el `.joblib` del régimen actual y emite `buy`/`sell` o `open_short` en bear (SL/TP invertidos). 
+Por defecto no se mezclan long y short en el mismo símbolo: se cierra la pierna opuesta salvo `risk.allow_long_and_short_same_symbol: true`.
 
 ## Estrategia RSI solo cruces en 4h (mínima)
 
@@ -170,8 +211,8 @@ Mac Desarrollo  ──git push──>  GitHub  ──auto-pull──>  Mac Produ
 
 ```bash
 # 1. Clonar el repo
-git clone https://github.com/alfons-/trading-ai.git
-cd trading-ai
+git clone https://github.com/alfons-/tradedan.git
+cd tradedan
 
 # 2. Crear entorno virtual e instalar dependencias
 python3 -m venv .venv
@@ -194,19 +235,19 @@ El script `scripts/deploy.sh` comprueba si hay cambios en GitHub, hace pull e in
 
 ```bash
 # 1. Copiar la plantilla plist
-cp scripts/com.trading-ai.deploy.plist ~/Library/LaunchAgents/
+cp scripts/com.tradedan.deploy.plist ~/Library/LaunchAgents/
 
 # 2. Editar la copia: reemplazar /Users/USUARIO/ por tu ruta real
-nano ~/Library/LaunchAgents/com.trading-ai.deploy.plist
+nano ~/Library/LaunchAgents/com.tradedan.deploy.plist
 
 # 3. Activar (se ejecutará cada 5 minutos y al iniciar sesión)
-launchctl load ~/Library/LaunchAgents/com.trading-ai.deploy.plist
+launchctl load ~/Library/LaunchAgents/com.tradedan.deploy.plist
 
 # Verificar que está activo
-launchctl list | grep trading-ai
+launchctl list | grep tradedan
 
 # Para desactivar
-launchctl unload ~/Library/LaunchAgents/com.trading-ai.deploy.plist
+launchctl unload ~/Library/LaunchAgents/com.tradedan.deploy.plist
 ```
 
 ### Configuración por entorno

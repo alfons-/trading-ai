@@ -19,7 +19,8 @@ exit_timeframe: "1D"       # TF para señales de salida (1D, 4h)
 
 # ── Estrategia ────────────────────────────────────
 # Tipo: "rsi_cross" | "xgboost"
-strategy: "rsi_cross"
+# Modelos multi-régimen: entrenar con configs/regime_experiment.yaml
+strategy: "xgboost"
 
 # Parámetros RSI cross (solo si strategy == "rsi_cross")
 rsi_cross:
@@ -33,10 +34,11 @@ xgboost:
   model_path: "models/xgb_model.joblib"
   prob_buy_threshold: 0.55
   prob_sell_threshold: 0.45
-  config_path: "configs/default.yaml"   # config del pipeline ML para features
-  # multi_regime: true   # si default.yaml tiene multi_regime: true (tres .joblib por símbolo)
-  # bull: { prob_buy_threshold: 0.55, prob_sell_threshold: 0.45 }
-  # bear: { prob_short_open_threshold: 0.55, prob_short_close_threshold: 0.45 }
+  config_path: "configs/regime_experiment.yaml"
+  multi_regime: true
+  bull: { prob_buy_threshold: 0.55, prob_sell_threshold: 0.45 }
+  bear: { prob_short_open_threshold: 0.55, prob_short_close_threshold: 0.45 }
+  sideways: { prob_buy_threshold: 0.55, prob_sell_threshold: 0.45 }
 
 # ── Gestión de riesgo ─────────────────────────────
 risk:
@@ -53,7 +55,8 @@ risk:
 loop:
   check_interval_seconds: 300   # cada 5 min — suficiente para velas de 4h
   lookback_bars: 100             # velas históricas a cargar para indicadores
-  history_days: 153              # ~5 meses de datos (Bybit) para RSI / estudio de tendencia
+  # >= ~120 días en 4h para S/R lookback 360 + indicadores (train_recommended)
+  history_days: 400
   log_interval_minutes: 15       # cada cuánto imprimir estado
 
 # ── Paper trading local ───────────────────────────

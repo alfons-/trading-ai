@@ -77,6 +77,23 @@ def load_config(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     if not p.is_absolute():
         p = ROOT / p
+    else:
+        # Compatibilidad con rutas absolutas antiguas del repo renombrado
+        # p.ej. /Users/.../trading-ai/configs/foo.yaml -> ROOT/configs/foo.yaml
+        if not p.exists():
+            try:
+                rel = p.relative_to(Path("/Users/alfonsomartinezdomenech/trading-ai"))
+            except ValueError:
+                rel = None
+            if rel is not None:
+                legacy_candidate = ROOT / rel
+                if legacy_candidate.exists():
+                    p = legacy_candidate
+    p = p.resolve()
+    if not p.is_file():
+        raise FileNotFoundError(
+            f"No existe el archivo de configuración (ruta resuelta): {p}"
+        )
     with open(p, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
@@ -216,8 +233,7 @@ def check_xgboost_signal(
     xgb_cfg = cfg.get("xgboost", {})
 
     ml_config_path = ROOT / xgb_cfg.get("config_path", "configs/default.yaml")
-    with open(ml_config_path, encoding="utf-8") as f:
-        ml_cfg = yaml.safe_load(f)
+    ml_cfg = load_config(ml_config_path)
 
     multi_regime = xgb_cfg.get("multi_regime")
     if multi_regime is None:
@@ -537,7 +553,11 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
         except KeyboardInterrupt:
             break
         except Exception as e:
-            print(f"[LiveRunner] Error: {e}")
+            extra = ""
+            fn = getattr(e, "filename", None)
+            if fn is not None:
+                extra = f" | archivo: {fn!r}"
+            print(f"[LiveRunner] Error: {e!s}{extra}")
             time.sleep(interval)
             continue
 

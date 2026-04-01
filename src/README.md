@@ -21,11 +21,11 @@ src/
 Ejecuta desde la raíz del proyecto. El script `scripts/ejemplo_src.py` añade la raíz a `sys.path` para que encuentre `src`:
 
 ```bash
-cd /ruta/a/trading-ai
+cd /ruta/a/tradedan
 python scripts/ejemplo_src.py
 ```
 
-Si escribes otro script fuera de la raíz, añade al inicio: `sys.path.insert(0, "/ruta/a/trading-ai")` o ejecuta con `PYTHONPATH=. python tu_script.py`.
+Si escribes otro script fuera de la raíz, añade al inicio: `sys.path.insert(0, "/ruta/a/tradedan")` o ejecuta con `PYTHONPATH=. python tu_script.py`.
 
 En tu código:
 

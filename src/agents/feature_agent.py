@@ -15,6 +15,7 @@ from ta.trend import ADXIndicator, MACD
 
 from src.indicators.ma import add_sma
 from src.indicators.momentum import add_rsi
+from src.indicators.touch_support_resistance import compute_touch_support_resistance
 
 
 class FeatureAgent:
@@ -84,7 +85,7 @@ class FeatureAgent:
             df["macd_signal"] = macd_ind.macd_signal()
             df["macd_diff"] = macd_ind.macd_diff()
 
-        # ── Soportes y Resistencias (rolling max/min en 4h) ──
+        # ── Soportes y resistencias (pivotes + toques, o legacy min/max rolling) ──
         self._sr_feature_names = []
         if self.sr_cfg.get("enabled"):
             df = self._build_support_resistance(df)
@@ -97,11 +98,34 @@ class FeatureAgent:
         return df
 
     def _build_support_resistance(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Añade features de soporte/resistencia basadas en rolling max/min."""
-        lookback = self.sr_cfg.get("lookback", 30)
+        """S/R: modo *touches* (pivotes + toques) o *legacy* (rolling min/max)."""
+        mode = str(self.sr_cfg.get("mode", "touches")).lower()
+        lookback = int(self.sr_cfg.get("lookback", 360))
 
-        df["resistencia"] = df["alto"].rolling(lookback).max()
-        df["soporte"] = df["bajo"].rolling(lookback).min()
+        if mode == "legacy":
+            df["resistencia"] = df["alto"].rolling(lookback).max()
+            df["soporte"] = df["bajo"].rolling(lookback).min()
+        else:
+            swing_order = int(self.sr_cfg.get("swing_order", 2))
+            tol = float(self.sr_cfg.get("touch_tolerance_pct", 0.002))
+            min_t = int(self.sr_cfg.get("min_touches", 2))
+            fb = bool(self.sr_cfg.get("fallback_minmax", True))
+            low = df["bajo"].to_numpy(dtype=np.float64)
+            high = df["alto"].to_numpy(dtype=np.float64)
+            close = df["cierre"].to_numpy(dtype=np.float64)
+            sup, res = compute_touch_support_resistance(
+                low,
+                high,
+                close,
+                lookback=lookback,
+                swing_order=swing_order,
+                touch_tolerance_pct=tol,
+                min_touches=min_t,
+                fallback_minmax=fb,
+            )
+            df["soporte"] = sup
+            df["resistencia"] = res
+
         df["dist_resistencia"] = (df["resistencia"] - df["cierre"]) / df["cierre"]
         df["dist_soporte"] = (df["cierre"] - df["soporte"]) / df["cierre"]
         rango = df["resistencia"] - df["soporte"]
@@ -109,6 +133,16 @@ class FeatureAgent:
 
         self._sr_feature_names = ["dist_resistencia", "dist_soporte", "posicion_rango"]
         return df
+
+    def _sr_touch_params(self) -> tuple[int, float, int, bool, int]:
+        """swing_order, tol, min_touches, fallback, lookback_daily."""
+        swing = int(self.sr_cfg.get("swing_order", 2))
+        d_swing = int(self.sr_cfg.get("daily_swing_order", swing))
+        tol = float(self.sr_cfg.get("touch_tolerance_pct", 0.002))
+        min_t = int(self.sr_cfg.get("min_touches", 2))
+        fb = bool(self.sr_cfg.get("fallback_minmax", True))
+        dlb = int(self.sr_cfg.get("daily_lookback", 62))
+        return d_swing, tol, min_t, fb, dlb
 
     def _merge_higher_tf_features(
         self,
@@ -180,6 +214,7 @@ class FeatureAgent:
                 add_rsi(df_ht, column="cierre", window=rsi_w, nombre_columna=rsi_col)
 
                 feat_cols = [sma_col, rsi_col]
+                sr_daily_cols: list[str] = []
 
                 # Pivot Points (soporte/resistencia diario)
                 if cfg.get("pivot_points", False):
@@ -189,10 +224,30 @@ class FeatureAgent:
                     df_ht[f"{prefix}_s1"] = 2 * df_ht["_pivot"] - df_ht["alto"]
                     feat_cols.extend([f"{prefix}_pivot", f"{prefix}_r1", f"{prefix}_s1"])
 
+                if self.sr_cfg.get("enabled") and str(self.sr_cfg.get("mode", "touches")) != "legacy":
+                    d_swing, tol, min_t, fb, dlb = self._sr_touch_params()
+                    sup_d, res_d = compute_touch_support_resistance(
+                        df_ht["bajo"].to_numpy(dtype=np.float64),
+                        df_ht["alto"].to_numpy(dtype=np.float64),
+                        df_ht["cierre"].to_numpy(dtype=np.float64),
+                        lookback=dlb,
+                        swing_order=d_swing,
+                        touch_tolerance_pct=tol,
+                        min_touches=min_t,
+                        fallback_minmax=fb,
+                    )
+                    df_ht["_sr_d_sup"] = sup_d
+                    df_ht["_sr_d_res"] = res_d
+                    sr_daily_cols = ["_sr_d_sup", "_sr_d_res"]
+                    feat_cols.extend(sr_daily_cols)
+
                 merge_cols = ["fecha"] + feat_cols + [f"{prefix}_cierre"]
                 df_ht = df_ht.rename(columns={"cierre": f"{prefix}_cierre"})
                 df_ht = df_ht[merge_cols].dropna()
-                self._ht_feature_names.extend(feat_cols + [f"{prefix}_cierre"])
+                self._ht_feature_names.extend(
+                    [c for c in feat_cols if c not in sr_daily_cols]
+                    + [f"{prefix}_cierre"]
+                )
 
             else:
                 continue
@@ -205,6 +260,23 @@ class FeatureAgent:
                 on="fecha",
                 direction="backward",
             )
+
+            if name == "daily" and self.sr_cfg.get("enabled"):
+                if str(self.sr_cfg.get("mode", "touches")) != "legacy" and "_sr_d_res" in df.columns:
+                    df["daily_dist_resistencia"] = (df["_sr_d_res"] - df["cierre"]) / df["cierre"]
+                    df["daily_dist_soporte"] = (df["cierre"] - df["_sr_d_sup"]) / df["cierre"]
+                    dr = df["_sr_d_res"] - df["_sr_d_sup"]
+                    df["daily_posicion_rango"] = np.where(
+                        dr > 0, (df["cierre"] - df["_sr_d_sup"]) / dr, 0.5
+                    )
+                    df.drop(columns=["_sr_d_res", "_sr_d_sup"], inplace=True, errors="ignore")
+                    self._ht_feature_names.extend(
+                        [
+                            "daily_dist_resistencia",
+                            "daily_dist_soporte",
+                            "daily_posicion_rango",
+                        ]
+                    )
 
         return df
 

@@ -42,13 +42,15 @@ class LabelAgent:
         *,
         regime_column: str = "regime",
         range_threshold: float = 0.003,
+        sideways_target_mode: str = "range",
     ) -> pd.DataFrame:
         """
         Añade 'retorno_futuro' y 'target' según el régimen de cada fila.
 
         - Bull: target=1 si retorno_futuro > threshold (favorable long).
         - Bear: target=1 si retorno_futuro < -threshold (favorable short).
-        - Sideways: target=1 si abs(retorno_futuro) < range_threshold (poco movimiento).
+        - Sideways (range): target=1 si abs(retorno_futuro) < range_threshold.
+        - Sideways (bounce_up): target=1 si retorno_futuro > range_threshold.
         """
         if regime_column not in df.columns:
             raise KeyError(f"Falta columna '{regime_column}' (RegimeAgent.assign_regime).")
@@ -67,7 +69,11 @@ class LabelAgent:
         tgt.loc[m_bull] = (rf.loc[m_bull] > self.threshold).astype(float)
         tgt.loc[m_bear] = (rf.loc[m_bear] < -self.threshold).astype(float)
         abs_rf = rf.abs()
-        tgt.loc[m_side] = (abs_rf.loc[m_side] < range_threshold).astype(float)
+        side_mode = str(sideways_target_mode).strip().lower()
+        if side_mode == "bounce_up":
+            tgt.loc[m_side] = (rf.loc[m_side] > range_threshold).astype(float)
+        else:
+            tgt.loc[m_side] = (abs_rf.loc[m_side] < range_threshold).astype(float)
 
         tgt.loc[rf.isna()] = float("nan")
         df["target"] = tgt

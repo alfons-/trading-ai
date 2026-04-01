@@ -4,23 +4,23 @@
 <plist version="1.0">
 <dict>
     <!--
-        Plantilla launchd para auto-deploy en el Mac de producción.
+        Plantilla launchd para auto-deploy en el Mac de producción (Tradedan).
 
         Instalación (una sola vez en el Mac de producción):
-          cp scripts/com.trading-ai.deploy.plist ~/Library/LaunchAgents/
+          cp scripts/com.tradedan.deploy.plist ~/Library/LaunchAgents/
           # Editar la copia para ajustar la ruta del proyecto (ProgramArguments)
-          launchctl load ~/Library/LaunchAgents/com.trading-ai.deploy.plist
+          launchctl load ~/Library/LaunchAgents/com.tradedan.deploy.plist
 
         Desactivar:
-          launchctl unload ~/Library/LaunchAgents/com.trading-ai.deploy.plist
+          launchctl unload ~/Library/LaunchAgents/com.tradedan.deploy.plist
     -->
     <key>Label</key>
-    <string>com.trading-ai.deploy</string>
+    <string>com.tradedan.deploy</string>
 
     <key>ProgramArguments</key>
     <array>
         <!-- Ajustar esta ruta al directorio real del proyecto en el Mac de producción -->
-        <string>/Users/USUARIO/trading-ai/scripts/deploy.sh</string>
+        <string>/Users/USUARIO/tradedan/scripts/deploy.sh</string>
     </array>
 
     <!-- Ejecutar cada 300 segundos (5 minutos) -->
@@ -28,10 +28,10 @@
     <integer>300</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/USUARIO/trading-ai/logs/launchd_stdout.log</string>
+    <string>/Users/USUARIO/tradedan/logs/launchd_stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/USUARIO/trading-ai/logs/launchd_stderr.log</string>
+    <string>/Users/USUARIO/tradedan/logs/launchd_stderr.log</string>
 
     <key>RunAtLoad</key>
     <true/>

@@ -1,0 +1,8 @@
+# Metadatos del proyecto Tradedan (nombre del paquete en disco: tradedan).
+# Las dependencias siguen en requirements.txt; el código se ejecuta con PYTHONPATH=.
+[project]
+name = "tradedan"
+version = "0.1.0"
+description = "Tradedan — análisis de mercados, ML y ejecución de señales"
+readme = "README.md"
+requires-python = ">=3.10"

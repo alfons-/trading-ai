@@ -22,6 +22,25 @@ from src.agents.regime_agent import ALL_REGIMES, RegimeAgent
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _resolve_scale_pos_weight(y: pd.Series, cfg_val) -> float:
+    """
+    Si cfg_val es la cadena 'auto', usa neg/pos en el train (cap 25).
+    Si no, interpreta como float (default 1.0).
+    """
+    if isinstance(cfg_val, str) and cfg_val.strip().lower() == "auto":
+        yv = y.astype(float)
+        neg = int((yv == 0).sum())
+        pos = int((yv == 1).sum())
+        if pos < 1:
+            return 1.0
+        w = float(neg) / float(pos)
+        return float(min(max(w, 1.0), 25.0))
+    try:
+        return float(cfg_val) if cfg_val is not None else 1.0
+    except (TypeError, ValueError):
+        return 1.0
+
+
 class OrchestratorAgent:
     """Ejecuta un experimento completo a partir de un archivo de configuración YAML."""
 
@@ -142,13 +161,15 @@ class OrchestratorAgent:
         # 5. Entrenar XGBoost
         print("\n── 5. Entrenando XGBoost ──")
         xgb_cfg = self.cfg["xgboost"]
+        spw = _resolve_scale_pos_weight(y_train, xgb_cfg.get("scale_pos_weight", 1.0))
+        print(f"   scale_pos_weight={spw:.4f} (target train: {y_train.value_counts().to_dict()})")
         model_agent = ModelAgent(
             n_estimators=xgb_cfg["n_estimators"],
             max_depth=xgb_cfg["max_depth"],
             learning_rate=xgb_cfg["learning_rate"],
             subsample=xgb_cfg["subsample"],
             colsample_bytree=xgb_cfg["colsample_bytree"],
-            scale_pos_weight=xgb_cfg.get("scale_pos_weight", 1.0),
+            scale_pos_weight=spw,
             eval_metric=xgb_cfg["eval_metric"],
             early_stopping_rounds=xgb_cfg["early_stopping_rounds"],
         )
@@ -198,11 +219,16 @@ class OrchestratorAgent:
         tgt_cfg = self.cfg["target"]
         rt_cfg = self.cfg.get("regime_targets", {})
         range_th = float(rt_cfg.get("range_threshold", 0.003))
+        sideways_target_mode = str(rt_cfg.get("sideways_target_mode", "range"))
         label_agent = LabelAgent(
             horizon=tgt_cfg["horizon"],
             threshold=tgt_cfg["threshold"],
         )
-        df = label_agent.build_regime_aware_target(df, range_threshold=range_th)
+        df = label_agent.build_regime_aware_target(
+            df,
+            range_threshold=range_th,
+            sideways_target_mode=sideways_target_mode,
+        )
 
         df_clean = df.dropna(subset=feature_cols + ["target", "regime"]).reset_index(drop=True)
         print(f"   Filas válidas tras limpieza: {len(df_clean)}")
@@ -218,6 +244,14 @@ class OrchestratorAgent:
         df_val = df_clean.iloc[n_train:n_train + n_val]
         df_test = df_clean.iloc[n_train + n_val:]
         print(f"   Train: {len(df_train)} | Val: {len(df_val)} | Test: {len(df_test)}")
+
+        print("   Target por régimen (train):")
+        for reg in ALL_REGIMES:
+            sub = df_train[df_train["regime"] == reg]["target"]
+            if len(sub) == 0:
+                print(f"      {reg}: (sin filas)")
+            else:
+                print(f"      {reg}: {sub.value_counts().to_dict()}")
 
         rm_cfg = self.cfg.get("regime_models", {})
         path_tpl = str(rm_cfg.get("path_template", "models/xgb_{regime}_{symbol}.joblib"))
@@ -249,13 +283,16 @@ class OrchestratorAgent:
             X_va, y_va = va[feature_cols], va["target"]
             X_te, y_te = te[feature_cols], te["target"]
 
+            spw = _resolve_scale_pos_weight(y_tr, xgb_cfg.get("scale_pos_weight", 1.0))
+            print(f"   [{regime}] scale_pos_weight={spw:.4f} | target train: {y_tr.value_counts().to_dict()}")
+
             model_agent = ModelAgent(
                 n_estimators=xgb_cfg["n_estimators"],
                 max_depth=xgb_cfg["max_depth"],
                 learning_rate=xgb_cfg["learning_rate"],
                 subsample=xgb_cfg["subsample"],
                 colsample_bytree=xgb_cfg["colsample_bytree"],
-                scale_pos_weight=xgb_cfg.get("scale_pos_weight", 1.0),
+                scale_pos_weight=spw,
                 eval_metric=xgb_cfg["eval_metric"],
                 early_stopping_rounds=xgb_cfg["early_stopping_rounds"],
             )

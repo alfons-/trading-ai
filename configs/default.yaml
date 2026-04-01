@@ -36,6 +36,22 @@ features:
   rsi_window: 14
   volatility_window: 20
   return_lags: [1, 2, 3, 5]
+  macd:
+    enabled: true
+    window_fast: 12
+    window_slow: 26
+    window_sign: 9
+  support_resistance:
+    enabled: true
+    # touches: pivotes (swings) + recuento de toques; legacy: rolling min/max
+    mode: touches
+    lookback: 360              # velas TF base (~2 meses en 4h)
+    daily_lookback: 62         # velas 1D (~2 meses)
+    swing_order: 2             # barras a cada lado del pivote
+    daily_swing_order: 2       # opcional; por defecto = swing_order
+    touch_tolerance_pct: 0.002  # 0.2 % del nivel cuenta como toque
+    min_touches: 2
+    fallback_minmax: true      # si no hay pivote válido, min/max de la ventana
 
 # ── Target ────────────────────────────────────────────────────
 target:

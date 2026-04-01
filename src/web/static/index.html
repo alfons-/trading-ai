@@ -96,12 +96,76 @@
       text-align: right;
       margin-bottom: 0.5rem;
     }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .metric-value {
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
   <h1>Tradedan Dashboard</h1>
   <p class="subtitle">Bot control + signals & paper orders – auto-refresh every 30 s</p>
   <p class="refresh-info">Last update: <span id="lastUpdate">–</span></p>
+
+  <div class="section">
+    <h2>Paper Summary</h2>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">PnL Total</div>
+        <div class="metric-value" id="sumPnl">–</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Trades</div>
+        <div class="metric-value" id="sumTrades">–</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Win Rate</div>
+        <div class="metric-value" id="sumWinRate">–</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Avg Return</div>
+        <div class="metric-value" id="sumAvgReturn">–</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Best Trade</div>
+        <div class="metric-value" id="sumBestTrade">–</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Worst Trade</div>
+        <div class="metric-value" id="sumWorstTrade">–</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Last Signal</div>
+        <div class="metric-value" id="sumLastSignal">–</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Last Trade</div>
+        <div class="metric-value" id="sumLastTrade">–</div>
+      </div>
+    </div>
+  </div>
 
   <div class="section">
     <h2>Bot control</h2>
@@ -118,6 +182,21 @@
       <div style="color:var(--muted); font-size:0.75rem; margin-bottom:0.25rem;">Tail log (`logs/bot_web.log`):</div>
       <pre id="botLog" style="white-space:pre-wrap; font-size:0.75rem; line-height:1.25rem; color:var(--text); margin:0;"></pre>
     </div>
+  </div>
+
+  <div class="section">
+    <h2>Paper by Symbol</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Trades</th>
+          <th>Win Rate</th>
+          <th>PnL</th>
+        </tr>
+      </thead>
+      <tbody id="symbolsBody"><tr><td colspan="4" class="empty-msg">Loading…</td></tr></tbody>
+    </table>
   </div>
 
   <div class="section">
@@ -197,6 +276,53 @@
       return isNaN(n) ? esc(v) : n.toFixed(dec ?? 2);
     }
 
+    function fmtPct(v, dec) {
+      if (v == null || v === "") return "–";
+      const n = Number(v);
+      return isNaN(n) ? esc(v) : `${(n * 100).toFixed(dec ?? 2)}%`;
+    }
+
+    function setMetric(id, text, color) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.style.color = color || "var(--text)";
+    }
+
+    function renderSummary(summary) {
+      const pnl = Number(summary.pnl_total || 0);
+      const best = summary.best_trade_pnl;
+      const worst = summary.worst_trade_pnl;
+      setMetric("sumPnl", `${pnl >= 0 ? "+" : ""}${fmtNum(pnl) } USDT`, pnl >= 0 ? "var(--green)" : "var(--red)");
+      setMetric("sumTrades", String(summary.trade_count ?? 0));
+      setMetric("sumWinRate", fmtPct(summary.win_rate));
+      setMetric("sumAvgReturn", fmtPct(summary.avg_return), Number(summary.avg_return || 0) >= 0 ? "var(--green)" : "var(--red)");
+      setMetric("sumBestTrade", best == null ? "–" : `${Number(best) >= 0 ? "+" : ""}${fmtNum(best)} USDT`, "var(--green)");
+      setMetric("sumWorstTrade", worst == null ? "–" : `${Number(worst) >= 0 ? "+" : ""}${fmtNum(worst)} USDT`, "var(--red)");
+
+      const lastSignal = summary.last_signal;
+      const signalText = lastSignal ? `${lastSignal.symbol || "?"} ${lastSignal.signal || "NONE"}` : "–";
+      setMetric("sumLastSignal", signalText);
+      setMetric("sumLastTrade", summary.last_trade_timestamp ? esc(summary.last_trade_timestamp) : "–");
+    }
+
+    function renderSymbols(rows) {
+      const tb = document.getElementById("symbolsBody");
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="4" class="empty-msg">No symbols yet.</td></tr>`;
+        return;
+      }
+      tb.innerHTML = rows.map(r => {
+        const pnl = Number(r.pnl_total || 0);
+        const color = pnl >= 0 ? "var(--green)" : "var(--red)";
+        return `<tr>
+          <td>${esc(r.symbol)}</td>
+          <td>${esc(r.trade_count)}</td>
+          <td>${fmtPct(r.win_rate)}</td>
+          <td style="color:${color}; font-weight:600;">${pnl >= 0 ? "+" : ""}${fmtNum(pnl)} USDT</td>
+        </tr>`;
+      }).join("");
+    }
+
     function renderSignals(rows) {
       const tb = document.getElementById("signalsBody");
       if (!rows.length) {
@@ -269,17 +395,21 @@
 
     async function refresh() {
       try {
-        const [botRes, sigRes, ordRes, trdRes] = await Promise.all([
+        const [botRes, sigRes, ordRes, trdRes, sumRes] = await Promise.all([
           fetch("/api/bot/status"),
           fetch("/api/signals?limit=200"),
           fetch("/api/paper-orders?limit=200"),
           fetch("/api/paper-trades?limit=200"),
+          fetch("/api/paper-summary"),
         ]);
         const bot = await botRes.json();
         document.getElementById("botStatus").textContent =
           bot.running ? `RUNNING (pid ${bot.pid})` : "STOPPED";
         document.getElementById("botLog").textContent =
-          (bot.last_log_lines || []).slice(-80).join("\n");
+          (bot.last_log_lines || []).slice(-20).join("\n");
+        const summary = await sumRes.json();
+        renderSummary(summary);
+        renderSymbols(summary.symbols || []);
         renderSignals(await sigRes.json());
         renderOrders(await ordRes.json());
         renderTrades(await trdRes.json());

@@ -65,6 +65,24 @@ def _read_jsonl_tail(path: Path, limit: int) -> list[dict[str, Any]]:
     return records[-limit:]
 
 
+def _read_jsonl_all(path: Path) -> list[dict[str, Any]]:
+    """Read all valid JSONL records from *path*."""
+    if not path.exists():
+        return []
+
+    records: list[dict[str, Any]] = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return records
+
+
 @app.get("/")
 async def index():
     return FileResponse(str(_STATIC_DIR / "index.html"))
@@ -83,6 +101,66 @@ async def get_paper_orders(limit: int = Query(200, ge=1, le=5000)):
 @app.get("/api/paper-trades")
 async def get_paper_trades(limit: int = Query(200, ge=1, le=5000)):
     return _read_jsonl_tail(_PAPER_TRADES_FILE, limit)
+
+
+@app.get("/api/paper-summary")
+async def get_paper_summary():
+    trades = _read_jsonl_all(_PAPER_TRADES_FILE)
+    orders = _read_jsonl_all(_PAPER_ORDERS_FILE)
+    signals = _read_jsonl_tail(_SIGNALS_FILE, 1)
+
+    if not trades:
+        return {
+            "trade_count": 0,
+            "win_rate": 0.0,
+            "pnl_total": 0.0,
+            "avg_return": 0.0,
+            "best_trade_pnl": None,
+            "worst_trade_pnl": None,
+            "last_trade_timestamp": None,
+            "last_signal": signals[-1] if signals else None,
+            "open_order_count": len(orders),
+            "symbols": [],
+        }
+
+    pnl_values = [float(t.get("pnl", 0.0) or 0.0) for t in trades]
+    returns = [float(t.get("retorno", 0.0) or 0.0) for t in trades]
+    wins = sum(1 for p in pnl_values if p > 0)
+
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for t, pnl in zip(trades, pnl_values):
+        symbol = str(t.get("symbol", "UNKNOWN"))
+        info = by_symbol.setdefault(symbol, {"symbol": symbol, "trade_count": 0, "wins": 0, "pnl_total": 0.0})
+        info["trade_count"] += 1
+        info["pnl_total"] += pnl
+        if pnl > 0:
+            info["wins"] += 1
+
+    symbols = []
+    for info in by_symbol.values():
+        n = int(info["trade_count"])
+        symbols.append(
+            {
+                "symbol": info["symbol"],
+                "trade_count": n,
+                "win_rate": (float(info["wins"]) / n) if n else 0.0,
+                "pnl_total": float(info["pnl_total"]),
+            }
+        )
+    symbols.sort(key=lambda x: x["pnl_total"], reverse=True)
+
+    return {
+        "trade_count": len(trades),
+        "win_rate": wins / len(trades),
+        "pnl_total": sum(pnl_values),
+        "avg_return": sum(returns) / len(returns),
+        "best_trade_pnl": max(pnl_values),
+        "worst_trade_pnl": min(pnl_values),
+        "last_trade_timestamp": trades[-1].get("timestamp"),
+        "last_signal": signals[-1] if signals else None,
+        "open_order_count": len(orders),
+        "symbols": symbols,
+    }
 
 
 @app.get("/api/bot/status")

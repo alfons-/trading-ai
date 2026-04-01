@@ -28,12 +28,12 @@ Si no sabes **por qué** podría existir ineficiencia (flujo, comportamiento rep
 
 Reglas típicas en gestión seria (orientativas):
 
-| Concepto | Idea |
-|----------|------|
-| Riesgo por trade | Fracción muy pequeña del capital (orden habitual: **0,25 % – 1 %** según estilo y volatilidad). |
-| R múltiple | Objetivo de **beneficio esperado vs riesgo** (p. ej. buscar escenarios donde el TP lógico esté a **≥ 2R** si el stop es 1R). |
-| Drawdown máximo | Definir cuándo **parar** de operar y revisar el sistema (no “revenge trading”). |
-| Correlación | No acumular 10 trades que son en realidad **la misma apuesta** (misma beta cripto). |
+| Concepto         | Idea |
+|------------------|------------------------------------------------------------------------------------------------------------------------------|
+| Riesgo por trade | Fracción muy pequeña del capital (orden habitual: **0,25 % – 1 %** según estilo y volatilidad).                              |
+| R múltiple       | Objetivo de **beneficio esperado vs riesgo** (p. ej. buscar escenarios donde el TP lógico esté a **≥ 2R** si el stop es 1R). |
+| Drawdown máximo  | Definir cuándo **parar** de operar y revisar el sistema (no “revenge trading”).                                              |
+| Correlación      | No acumular 10 trades que son en realidad **la misma apuesta** (misma beta cripto).                                          |
 
 Tu código ya acota **stop -5 %** y **TP +10 %** (≈ 2R si el riesgo es 5 % del precio de entrada en spot simulado). En real, el riesgo en **cuenta** debe calcularse con **tamaño de posición**, no solo con % de precio.
 
@@ -50,15 +50,15 @@ La mayoría de sistemas “rompen” cuando el régimen cambia:
 
 Lo que ya tienes encaja con ideas **razonables** si no se sobrecalienta:
 
-| Pieza | Lógica profesional |
-|--------|---------------------|
-| **RSI + cruce 30** | Busca **reversión desde sobreventa**; solo tiene sentido si el contexto mayor no es claramente bajista (tu filtro 1D ayuda). |
+| Pieza                     | Lógica profesional |
+|---------------------------|---------------------|
+| **RSI + cruce 30**.       | Busca **reversión desde sobreventa**; solo tiene sentido si el contexto mayor no es claramente bajista (tu filtro 1D ayuda). |
 | **Precio > EMA 200 (4h)** | Evita “cuchillo cayendo” en marco operativo. |
-| **EMA 200 diario** | Filtro de **régimen**; coherente con “no nadar contra la corriente”. |
-| **Divergencia** | Señal **discrecional** válida pero fácil de ver donde no existe; mejor como **confluencia opcional**, no dogma. |
-| **Volumen creciente** | Confirma **participación**; en cripto, cuidado con wash y exchanges distintos. |
-| **SL -5 % / TP +10 %** | Perfil **2:1** en precio; en cuenta real hace falta **posición** para que 5 % de precio ≠ 5 % de cuenta. |
-| **TP parcial** | Muy usado para **sacar incertidumbre** y dejar correr parte con trailing o señal de salida (RSI diario > 70 es una salida por **sobrecompra mayor**, no óptima en tendencias fuertes). |
+| **EMA 200 diario**        | Filtro de **régimen**; coherente con “no nadar contra la corriente”. |
+| **Divergencia**           | Señal **discrecional** válida pero fácil de ver donde no existe; mejor como **confluencia opcional**, no dogma. |
+| **Volumen creciente**     | Confirma **participación**; en cripto, cuidado con wash y exchanges distintos. |
+| **SL -5 % / TP +10 %**    | Perfil **2:1** en precio; en cuenta real hace falta **posición** para que 5 % de precio ≠ 5 % de cuenta. |
+| **TP parcial**            | Muy usado para **sacar incertidumbre** y dejar correr parte con trailing o señal de salida (RSI diario > 70 es una salida por **sobrecompra mayor**, no óptima en tendencias fuertes). |
 
 ---
 
@@ -84,3 +84,17 @@ Lo que ya tienes encaja con ideas **razonables** si no se sobrecalienta:
 ## 6. Frase final
 
 La “estrategia ganadora” de un veterano no es un secreto: es **un sistema aburrido** que respeta el riesgo, opera poco cuando no hay edge y sobrevive lo suficiente para que las matemáticas del edge pequeño trabajen a su favor.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
