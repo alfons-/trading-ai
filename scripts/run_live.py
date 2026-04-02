@@ -45,11 +45,117 @@ from src.agents.regime_agent import (
     RegimeAgent,
 )
 from src.notifications.email import send_trade_email
+from src.notifications.pushover import send_pushover_async
 
 _running = True
 
+# Debounce identical Pushover error messages (avoid spam on tight loops).
+_pushover_error_last_mon: float = 0.0
+_pushover_error_last_msg: str = ""
+
+
+def _pushover_error_debounced(msg: str, *, debounce_s: float = 30.0) -> bool:
+    global _pushover_error_last_mon, _pushover_error_last_msg
+    now = time.monotonic()
+    if msg == _pushover_error_last_msg and (now - _pushover_error_last_mon) < debounce_s:
+        return False
+    _pushover_error_last_mon = now
+    _pushover_error_last_msg = msg
+    return True
+
 _SIGNALS_DIR = ROOT / "data" / "signal_logs"
 _SIGNALS_FILE = _SIGNALS_DIR / "signals.jsonl"
+_SHARED_LOG_FILE = ROOT / "logs" / "bot_web.log"
+
+_TF_CACHE: dict[tuple[str, str, str], pd.DataFrame] = {}
+_TF_LAST_TS: dict[tuple[str, str, str], pd.Timestamp] = {}
+
+
+def _merge_ohlcv(old: pd.DataFrame | None, new: pd.DataFrame) -> pd.DataFrame:
+    if old is None or old.empty:
+        return new.sort_values("fecha").reset_index(drop=True)
+    df = pd.concat([old, new], ignore_index=True)
+    df["fecha"] = pd.to_datetime(df["fecha"])
+    df = df.drop_duplicates(subset="fecha").sort_values("fecha").reset_index(drop=True)
+    return df
+
+
+def _safe_is_rate_limit_error(e: Exception) -> bool:
+    msg = str(e)
+    return "retCode" in msg and "10006" in msg
+
+
+def _fetch_ohlcv_smart(
+    agent: DataAgent,
+    *,
+    symbol: str,
+    timeframe: str,
+    history_days: int,
+    refresh_days: int,
+    force_full_init: bool = False,
+) -> tuple[pd.DataFrame, bool]:
+    """
+    Devuelve (df, updated).
+
+    - Inicializa cache con histórico completo (desde CSV si existe; si no, descarga 1 vez).
+    - En refrescos, solo descarga pocos días para “append” si hay velas nuevas.
+    """
+    key = (agent.category, symbol, timeframe)
+
+    # 1) Init: intenta cargar CSV (sin pegar a API)
+    if key not in _TF_CACHE or force_full_init:
+        try:
+            base = agent.get_ohlcv(symbol=symbol, timeframe=timeframe, days=history_days, force=False)
+        except Exception:
+            # Si no hay CSV o está corrupto, descarga una vez el histórico completo.
+            base = agent.get_ohlcv(symbol=symbol, timeframe=timeframe, days=history_days, force=True)
+        _TF_CACHE[key] = base
+        _TF_LAST_TS[key] = pd.to_datetime(base["fecha"].iloc[-1]) if not base.empty else pd.Timestamp.min
+        return base, True
+
+    # 2) Refresh: descarga solo pocos días para evitar rate limit
+    old = _TF_CACHE[key]
+    old_last = _TF_LAST_TS.get(key, pd.Timestamp.min)
+    try:
+        recent = agent.get_ohlcv(symbol=symbol, timeframe=timeframe, days=refresh_days, force=True)
+    except Exception as e:
+        # Propaga: el caller aplicará backoff en rate limit
+        raise
+
+    if recent.empty:
+        return old, False
+    new_last = pd.to_datetime(recent["fecha"].iloc[-1])
+    if new_last <= old_last:
+        return old, False
+
+    merged = _merge_ohlcv(old, recent)
+    _TF_CACHE[key] = merged
+    _TF_LAST_TS[key] = pd.to_datetime(merged["fecha"].iloc[-1])
+    return merged, True
+
+
+class _TeeStream:
+    def __init__(self, *streams):
+        self._streams = streams
+
+    def write(self, data: str) -> int:
+        for stream in self._streams:
+            stream.write(data)
+            stream.flush()
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self._streams:
+            stream.flush()
+
+
+def _setup_shared_log_capture() -> None:
+    if os.getenv("TRADEDAN_DISABLE_SHARED_LOG") == "1":
+        return
+    _SHARED_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    shared = open(_SHARED_LOG_FILE, "a", encoding="utf-8")
+    sys.stdout = _TeeStream(sys.stdout, shared)
+    sys.stderr = _TeeStream(sys.stderr, shared)
 
 
 def _notify_email_recipients() -> list[str]:
@@ -160,12 +266,33 @@ def fetch_multi_tf_for_ml(
     """Descarga base + higher TFs como en el orquestador (merge_asof en features)."""
     agent = DataAgent(category=exec_cfg.get("bybit_category", DEFAULT_BYBIT_CATEGORY))
     days = int(exec_cfg.get("loop", {}).get("history_days", 30))
+
+    # Refresco incremental para no exceder rate limits:
+    # - base TF: refresca pocos días cada ciclo (si hay vela nueva se actualiza)
+    # - 1D/1W: refrescan muy poco y solo se usan como contexto (merge_asof)
+    refresh_days_by_tf = {
+        "4h": 7,
+        "1h": 3,
+        "1D": 30,
+        "1W": 180,
+    }
+
     dfs_by_tf: dict[str, pd.DataFrame] = {}
+    updated_any = False
     for tf in _ml_all_timeframes(ml_cfg):
-        d = agent.get_ohlcv(symbol=symbol, timeframe=tf, days=days, force=True)
+        refresh_days = int(refresh_days_by_tf.get(tf, 7))
+        d, updated = _fetch_ohlcv_smart(
+            agent,
+            symbol=symbol,
+            timeframe=tf,
+            history_days=days,
+            refresh_days=refresh_days,
+        )
+        updated_any = updated_any or updated
         d = d.sort_values("fecha").reset_index(drop=True)
         d["fecha"] = pd.to_datetime(d["fecha"])
         dfs_by_tf[tf] = d
+
     base = ml_cfg.get("timeframe_base") or ml_cfg.get("timeframe", "4h")
     return dfs_by_tf[base], dfs_by_tf
 
@@ -468,6 +595,8 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
     agent.print_status(symbol)
 
     last_candle_check: str | None = None
+    last_known_candle: str | None = None
+    rate_limit_backoff_s = 5
 
     while _running:
         try:
@@ -503,6 +632,8 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
                 continue
 
             last_candle_check = last_fecha
+            last_known_candle = last_fecha
+            rate_limit_backoff_s = 5  # reset backoff tras un ciclo “útil”
             rsi_val = df.iloc[-1].get("rsi", float("nan"))
             price = df.iloc[-1]["cierre"]
             ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
@@ -528,6 +659,17 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
 
             if signal:
                 print(f"  *** SEÑAL: {signal.upper()} ***")
+                send_pushover_async(
+                    (
+                        f"symbol={symbol}\n"
+                        f"candle={last_fecha}\n"
+                        f"price={float(price):.6g}\n"
+                        f"signal={signal}\n"
+                        f"strategy={strategy}\n"
+                        f"mode={mode}"
+                    ),
+                    title="Señal detectada",
+                )
                 execute_signal(signal, symbol, agent, cfg)
             else:
                 print("  Sin señal")
@@ -553,11 +695,23 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
         except KeyboardInterrupt:
             break
         except Exception as e:
+            if _safe_is_rate_limit_error(e):
+                print(f"[LiveRunner] Rate limit Bybit detectado. Backoff {rate_limit_backoff_s}s...")
+                time.sleep(rate_limit_backoff_s)
+                rate_limit_backoff_s = min(rate_limit_backoff_s * 2, 120)
+                continue
             extra = ""
             fn = getattr(e, "filename", None)
             if fn is not None:
                 extra = f" | archivo: {fn!r}"
             print(f"[LiveRunner] Error: {e!s}{extra}")
+            err_body = (
+                f"{e!s}{extra}\n"
+                f"symbol={symbol}\n"
+                f"last_candle={last_known_candle or 'n/a'}"
+            )
+            if _pushover_error_debounced(err_body):
+                send_pushover_async(err_body, title="LiveRunner error")
             time.sleep(interval)
             continue
 
@@ -572,6 +726,7 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
 
 
 def main() -> None:
+    _setup_shared_log_capture()
     ap = argparse.ArgumentParser(description="Live / Paper Trading con Bybit")
     ap.add_argument("--config", type=str, default="configs/execution.yaml")
     ap.add_argument("--paper", action="store_true", help="Modo paper trading (simulación local)")
@@ -618,6 +773,20 @@ def main() -> None:
 
         if signal:
             print(f"  *** SEÑAL: {signal.upper()} ***")
+            last_fecha_once = str(df.iloc[-1]["fecha"])
+            env_once = "TESTNET" if cfg.get("testnet", True) else "MAINNET"
+            mode_once = "PAPER" if isinstance(agent, PaperExecutionAgent) else env_once
+            send_pushover_async(
+                (
+                    f"symbol={symbol}\n"
+                    f"candle={last_fecha_once}\n"
+                    f"price={float(price):.6g}\n"
+                    f"signal={signal}\n"
+                    f"strategy={strategy}\n"
+                    f"mode={mode_once}"
+                ),
+                title="Señal detectada",
+            )
             execute_signal(signal, symbol, agent, cfg)
         else:
             print("  Sin señal")

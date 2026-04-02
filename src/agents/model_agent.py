@@ -41,6 +41,7 @@ class ModelAgent:
             use_label_encoder=False,
             verbosity=0,
         )
+        self._early_stopping_rounds = int(early_stopping_rounds)
         self._is_trained = False
 
     def train(
@@ -58,8 +59,13 @@ class ModelAgent:
         """
         fit_params: dict = {}
         if X_val is not None and y_val is not None:
+            # Ensure early stopping is enabled when validation is present.
+            self.model.set_params(early_stopping_rounds=self._early_stopping_rounds)
             fit_params["eval_set"] = [(X_val, y_val)]
             fit_params["verbose"] = False
+        else:
+            # xgboost requires an eval_set when early stopping is enabled
+            self.model.set_params(early_stopping_rounds=None)
 
         self.model.fit(X_train, y_train, **fit_params)
         self._is_trained = True

@@ -19,6 +19,8 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from src.notifications.pushover import send_pushover_async
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 OrderSide = Literal["Buy", "Sell"]
@@ -26,6 +28,24 @@ OrderType = Literal["Market", "Limit"]
 
 _TESTNET_URL = "https://api-testnet.bybit.com"
 _MAINNET_URL = "https://api.bybit.com"
+
+
+def _pushover_order_message(order_info: dict[str, Any]) -> str:
+    lines = [
+        f"symbol={order_info.get('symbol')}",
+        f"side={order_info.get('side')}",
+        f"qty={order_info.get('qty')}",
+        f"price={order_info.get('price')}",
+    ]
+    sl = order_info.get("stop_loss")
+    if sl is not None and sl != "":
+        lines.append(f"SL={sl}")
+    tp = order_info.get("take_profit")
+    if tp is not None and tp != "":
+        lines.append(f"TP={tp}")
+    lines.append(f"reduce_only={order_info.get('reduce_only')}")
+    lines.append(f"order_id={order_info.get('order_id')}")
+    return "\n".join(lines)
 
 
 class ExecutionAgent:
@@ -192,6 +212,10 @@ class ExecutionAgent:
             f"{f' TP={take_profit}' if take_profit else ''}"
             f" → orderId={order_info['order_id']}"
         )
+
+        if resp.get("retCode") == 0:
+            title = "Trade cerrado (live)" if reduce_only else "Orden ejecutada (live)"
+            send_pushover_async(_pushover_order_message(order_info), title=title)
 
         return order_info
 
@@ -557,6 +581,8 @@ class PaperExecutionAgent:
         }
 
         self._log_order(order_info)
+        title = "Orden ejecutada (paper)" if not reduce_only else "Orden cierre (paper)"
+        send_pushover_async(_pushover_order_message(order_info), title=title)
         print(
             f"[PaperExecution] {side} {qty} {symbol} @ {exec_price:.2f}"
             f"{f' SL={stop_loss}' if stop_loss else ''}"
@@ -611,6 +637,22 @@ class PaperExecutionAgent:
     def _log_trade(self, trade_info: dict) -> None:
         with open(self._trades_log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(trade_info, default=str) + "\n")
+        ret = trade_info.get("retorno", 0)
+        try:
+            ret_s = f"{float(ret):.4%}"
+        except (TypeError, ValueError):
+            ret_s = str(ret)
+        send_pushover_async(
+            (
+                f"symbol={trade_info.get('symbol')}\n"
+                f"entry={trade_info.get('entry_price')}\n"
+                f"exit={trade_info.get('exit_price')}\n"
+                f"qty={trade_info.get('qty')}\n"
+                f"pnl={trade_info.get('pnl')}\n"
+                f"retorno={ret_s}"
+            ),
+            title="Trade cerrado (paper)",
+        )
 
     def get_execution_log(self) -> pd.DataFrame:
         log_file = self._log_dir / "paper_orders.jsonl"

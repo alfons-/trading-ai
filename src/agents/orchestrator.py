@@ -283,6 +283,9 @@ class OrchestratorAgent:
             X_va, y_va = va[feature_cols], va["target"]
             X_te, y_te = te[feature_cols], te["target"]
 
+            if len(va) == 0:
+                X_va, y_va = None, None
+
             spw = _resolve_scale_pos_weight(y_tr, xgb_cfg.get("scale_pos_weight", 1.0))
             print(f"   [{regime}] scale_pos_weight={spw:.4f} | target train: {y_tr.value_counts().to_dict()}")
 

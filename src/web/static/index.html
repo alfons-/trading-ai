@@ -171,15 +171,37 @@
     <h2>Bot control</h2>
     <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.75rem;">
       <button id="btnStart" style="background:var(--accent); color:white; border:0; padding:0.4rem 0.7rem; border-radius:6px; cursor:pointer;">
-        Start (paper)
+        Start 3 bots (paper)
       </button>
       <button id="btnStop" style="background:#333; color:white; border:1px solid var(--border); padding:0.4rem 0.7rem; border-radius:6px; cursor:pointer;">
-        Stop
+        Stop 3 bots
       </button>
       <span style="color:var(--muted); font-size:0.8rem;">Status: <span id="botStatus">–</span></span>
     </div>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem;">
+      <div style="color:var(--muted); font-size:0.75rem; margin-bottom:0.5rem;">Bots:</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Status</th>
+            <th>PID</th>
+            <th>Started</th>
+          </tr>
+        </thead>
+        <tbody id="botsBody"><tr><td colspan="4" class="empty-msg">Loading…</td></tr></tbody>
+      </table>
+    </div>
     <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0.75rem;">
-      <div style="color:var(--muted); font-size:0.75rem; margin-bottom:0.25rem;">Tail log (`logs/bot_web.log`):</div>
+      <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
+        <div style="color:var(--muted); font-size:0.75rem;">Tail log:</div>
+        <select id="botLogSelect" style="background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:0.25rem 0.4rem; font-size:0.75rem;">
+          <option value="BTCUSDT">BTCUSDT</option>
+          <option value="ETHUSDT">ETHUSDT</option>
+          <option value="ADAUSDT">ADAUSDT</option>
+        </select>
+        <div style="color:var(--muted); font-size:0.75rem;">(`logs/bot_<SYMBOL>.log`)</div>
+      </div>
       <pre id="botLog" style="white-space:pre-wrap; font-size:0.75rem; line-height:1.25rem; color:var(--text); margin:0;"></pre>
     </div>
   </div>
@@ -395,18 +417,33 @@
 
     async function refresh() {
       try {
-        const [botRes, sigRes, ordRes, trdRes, sumRes] = await Promise.all([
-          fetch("/api/bot/status"),
+        const [botsRes, sigRes, ordRes, trdRes, sumRes] = await Promise.all([
+          fetch("/api/bots/status"),
           fetch("/api/signals?limit=200"),
           fetch("/api/paper-orders?limit=200"),
           fetch("/api/paper-trades?limit=200"),
           fetch("/api/paper-summary"),
         ]);
-        const bot = await botRes.json();
-        document.getElementById("botStatus").textContent =
-          bot.running ? `RUNNING (pid ${bot.pid})` : "STOPPED";
-        document.getElementById("botLog").textContent =
-          (bot.last_log_lines || []).slice(-20).join("\n");
+        const bots = await botsRes.json();
+        const anyRunning = (bots || []).some(b => b && b.running);
+        document.getElementById("botStatus").textContent = anyRunning ? "RUNNING" : "STOPPED";
+
+        const tb = document.getElementById("botsBody");
+        if (!bots || !bots.length) {
+          tb.innerHTML = `<tr><td colspan="4" class="empty-msg">No bots yet.</td></tr>`;
+        } else {
+          tb.innerHTML = bots.map(b => `<tr>
+            <td>${esc(b.symbol)}</td>
+            <td>${b.running ? '<span class="badge badge-buy">RUNNING</span>' : '<span class="badge badge-sell">STOPPED</span>'}</td>
+            <td>${esc(b.pid)}</td>
+            <td>${esc(b.started_at)}</td>
+          </tr>`).join("");
+        }
+
+        const selected = document.getElementById("botLogSelect").value || "BTCUSDT";
+        const selBot = (bots || []).find(b => (b.symbol || "").toUpperCase() === selected.toUpperCase());
+        document.getElementById("botLog").textContent = (selBot && selBot.last_log_lines ? selBot.last_log_lines : []).slice(-20).join("\n");
+
         const summary = await sumRes.json();
         renderSummary(summary);
         renderSymbols(summary.symbols || []);
@@ -421,12 +458,12 @@
     }
 
     async function startBot() {
-      await fetch("/api/bot/start?paper=true", { method: "POST" });
+      await fetch("/api/bots/start?paper=true&symbols=BTCUSDT,ETHUSDT,ADAUSDT", { method: "POST" });
       await refresh();
     }
 
     async function stopBot() {
-      await fetch("/api/bot/stop", { method: "POST" });
+      await fetch("/api/bots/stop?symbols=BTCUSDT,ETHUSDT,ADAUSDT", { method: "POST" });
       await refresh();
     }
 
@@ -435,6 +472,7 @@
 
     document.getElementById("btnStart").addEventListener("click", startBot);
     document.getElementById("btnStop").addEventListener("click", stopBot);
+    document.getElementById("botLogSelect").addEventListener("change", refresh);
   </script>
 </body>
 </html>

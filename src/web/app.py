@@ -9,7 +9,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .bot_runner import BotRunner
+from .bot_runner import MultiBotRunner
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SIGNALS_FILE = _PROJECT_ROOT / "data" / "signal_logs" / "signals.jsonl"
@@ -21,7 +21,21 @@ app = FastAPI(title="Tradedan Dashboard")
 
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
-_BOT = BotRunner(_PROJECT_ROOT)
+_BOTS = MultiBotRunner(_PROJECT_ROOT)
+
+
+def _parse_symbols(raw: str) -> list[str]:
+    items = [p.strip().upper() for p in (raw or "").split(",")]
+    out = [s for s in items if s]
+    # dedupe preserving order
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for s in out:
+        if s in seen:
+            continue
+        seen.add(s)
+        uniq.append(s)
+    return uniq
 
 
 def _read_jsonl_tail(path: Path, limit: int) -> list[dict[str, Any]]:
@@ -165,7 +179,9 @@ async def get_paper_summary():
 
 @app.get("/api/bot/status")
 async def bot_status():
-    return _BOT.status_dict()
+    # backwards-compatible: return first bot if any
+    st = _BOTS.statuses()
+    return st[0] if st else {"running": False, "pid": None, "last_log_lines": []}
 
 
 @app.post("/api/bot/start")
@@ -173,9 +189,34 @@ async def bot_start(
     config: str = Query("configs/execution.yaml"),
     paper: bool = Query(True),
 ):
-    return _BOT.start(config=config, paper=paper).__dict__
+    # backwards-compatible: start default BTCUSDT
+    return _BOTS.start_one("BTCUSDT", config=config, paper=paper).__dict__
 
 
 @app.post("/api/bot/stop")
 async def bot_stop():
-    return _BOT.stop().__dict__
+    return _BOTS.stop_one("BTCUSDT").__dict__
+
+
+@app.get("/api/bots/status")
+async def bots_status():
+    return _BOTS.statuses()
+
+
+@app.post("/api/bots/start")
+async def bots_start(
+    symbols: str = Query("BTCUSDT,ETHUSDT,ADAUSDT"),
+    config: str = Query("configs/execution.yaml"),
+    paper: bool = Query(True),
+):
+    return _BOTS.start_many(_parse_symbols(symbols), config=config, paper=paper)
+
+
+@app.post("/api/bots/stop")
+async def bots_stop(
+    symbols: str = Query("BTCUSDT,ETHUSDT,ADAUSDT"),
+):
+    out = []
+    for s in _parse_symbols(symbols):
+        out.append(_BOTS.stop_one(s).__dict__)
+    return out
