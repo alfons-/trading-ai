@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
 import numpy as np
 import pandas as pd
 import yaml
@@ -83,6 +84,30 @@ def _merge_ohlcv(old: pd.DataFrame | None, new: pd.DataFrame) -> pd.DataFrame:
 def _safe_is_rate_limit_error(e: Exception) -> bool:
     msg = str(e)
     return "retCode" in msg and "10006" in msg
+
+
+def _safe_is_transient_network_error(e: BaseException) -> bool:
+    """SSL handshake timeout, cortes de red, etc. (reintentar con backoff, sin Pushover)."""
+    transient_types: tuple[type[BaseException], ...] = (
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+        httpx.ConnectError,
+    )
+    seen: set[int] = set()
+    cur: BaseException | None = e
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, transient_types):
+            return True
+        msg = str(cur).lower()
+        if "handshake" in msg and "timeout" in msg:
+            return True
+        if "_ssl.c" in str(cur) and "timed out" in msg:
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
 
 
 def _fetch_ohlcv_smart(
@@ -697,6 +722,14 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
         except Exception as e:
             if _safe_is_rate_limit_error(e):
                 print(f"[LiveRunner] Rate limit Bybit detectado. Backoff {rate_limit_backoff_s}s...")
+                time.sleep(rate_limit_backoff_s)
+                rate_limit_backoff_s = min(rate_limit_backoff_s * 2, 120)
+                continue
+            if _safe_is_transient_network_error(e):
+                print(
+                    f"[LiveRunner] Red/API temporal ({e!s}). "
+                    f"Backoff {rate_limit_backoff_s}s..."
+                )
                 time.sleep(rate_limit_backoff_s)
                 rate_limit_backoff_s = min(rate_limit_backoff_s * 2, 120)
                 continue

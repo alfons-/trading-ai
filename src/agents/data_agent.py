@@ -8,12 +8,23 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pandas as pd
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _BASE_URL = "https://api.bybit.com"
+
+# Conexión lenta / SSL: handshake puede superar timeouts cortos; reintentar fallos transitorios.
+_KLINE_MAX_ATTEMPTS = 3
+_KLINE_HTTP_TIMEOUT = httpx.Timeout(connect=35.0, read=60.0, write=30.0, pool=15.0)
+_KLINE_RETRY_EXC: tuple[type[BaseException], ...] = (
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.ConnectError,
+)
 
 # spot = contado; linear = perpetuo USDT (compatibilidad con CSV antiguos en subcarpeta)
 DEFAULT_BYBIT_CATEGORY = "linear"
@@ -66,12 +77,20 @@ class DataAgent:
             "end": end_ms,
             "limit": limit,
         }
-        resp = httpx.get(f"{_BASE_URL}/v5/market/kline", params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("retCode") != 0:
-            raise RuntimeError(f"Bybit API error: {data}")
-        return data["result"]["list"]
+        url = f"{_BASE_URL}/v5/market/kline"
+        for attempt in range(_KLINE_MAX_ATTEMPTS):
+            try:
+                resp = httpx.get(url, params=params, timeout=_KLINE_HTTP_TIMEOUT)
+                resp.raise_for_status()
+                data: dict[str, Any] = resp.json()
+                if data.get("retCode") != 0:
+                    raise RuntimeError(f"Bybit API error: {data}")
+                return data["result"]["list"]
+            except _KLINE_RETRY_EXC:
+                if attempt + 1 >= _KLINE_MAX_ATTEMPTS:
+                    raise
+                time.sleep(0.5 * (2**attempt))
+        raise RuntimeError("kline fetch: internal retry loop exhausted")
 
     def get_ohlcv(
         self,
