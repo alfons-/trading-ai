@@ -184,13 +184,27 @@ class FeatureAgent:
                 df_ht[ts_col] = df_ht["cierre"].ewm(span=ema_fast).mean() / df_ht["cierre"].ewm(span=ema_slow).mean() - 1
                 feat_cols.append(ts_col)
 
-                # ADX (fuerza de tendencia)
-                adx_w = cfg.get("adx_window", 14)
-                adx_ind = ADXIndicator(high=df_ht["alto"], low=df_ht["bajo"], close=df_ht["cierre"], window=adx_w)
-                df_ht[f"{prefix}_adx"] = adx_ind.adx()
-                df_ht[f"{prefix}_adx_pos"] = adx_ind.adx_pos()
-                df_ht[f"{prefix}_adx_neg"] = adx_ind.adx_neg()
-                feat_cols.extend([f"{prefix}_adx", f"{prefix}_adx_pos", f"{prefix}_adx_neg"])
+                # ADX (fuerza de tendencia). ta.ADXIndicator.adx() escribe en el índice `window`;
+                # con len(df_ht) <= window lanza IndexError (p. ej. 1W recién inicializado con pocas velas).
+                adx_w = int(cfg.get("adx_window", 14))
+                adx_col = f"{prefix}_adx"
+                adx_pos_col = f"{prefix}_adx_pos"
+                adx_neg_col = f"{prefix}_adx_neg"
+                if len(df_ht) > adx_w:
+                    adx_ind = ADXIndicator(
+                        high=df_ht["alto"],
+                        low=df_ht["bajo"],
+                        close=df_ht["cierre"],
+                        window=adx_w,
+                    )
+                    df_ht[adx_col] = adx_ind.adx()
+                    df_ht[adx_pos_col] = adx_ind.adx_pos()
+                    df_ht[adx_neg_col] = adx_ind.adx_neg()
+                else:
+                    df_ht[adx_col] = np.nan
+                    df_ht[adx_pos_col] = np.nan
+                    df_ht[adx_neg_col] = np.nan
+                feat_cols.extend([adx_col, adx_pos_col, adx_neg_col])
 
                 # Higher Highs / Higher Lows (estructura de tendencia)
                 hh_lookback = cfg.get("hh_lookback", 4)
