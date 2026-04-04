@@ -372,11 +372,12 @@ def check_xgboost_signal(
     cfg: dict[str, Any],
     symbol: str,
     dfs_by_tf: dict[str, pd.DataFrame] | None = None,
-) -> str | None:
+) -> tuple[str | None, str | None]:
     """
     Genera señal usando modelo XGBoost entrenado (una o tres cabezas por régimen).
 
-    Returns: "buy", "sell", "open_short", o None
+    Returns: (signal, regime) donde signal es "buy", "sell", "open_short", o None;
+    regime es bull/bear/sideways en multi_régimen, o None si no aplica.
     """
     import joblib
 
@@ -421,7 +422,12 @@ def check_xgboost_signal(
     df_clean = df_feat.dropna(subset=feature_cols)
 
     if df_clean.empty:
-        return None
+        regime_out = None
+        if multi_regime and "regime" in df_feat.columns:
+            s = df_feat["regime"].dropna()
+            if not s.empty:
+                regime_out = str(s.iloc[-1])
+        return None, regime_out
 
     last_row = df_clean.iloc[[-1]][feature_cols]
 
@@ -430,17 +436,17 @@ def check_xgboost_signal(
         if not model_path.exists():
             print(f"[LiveRunner] Modelo no encontrado: {model_path}")
             print("  Ejecuta primero: python -m scripts.run_experiment")
-            return None
+            return None, None
         model = joblib.load(model_path)
         prob = float(model.predict_proba(last_row)[0, 1])
         buy_thresh = float(xgb_cfg.get("prob_buy_threshold", 0.55))
         sell_thresh = float(xgb_cfg.get("prob_sell_threshold", 0.45))
         print(f"  XGBoost prob(up)={prob:.4f} | buy>{buy_thresh} sell<{sell_thresh}")
         if prob > buy_thresh:
-            return "buy"
+            return "buy", None
         if prob < sell_thresh:
-            return "sell"
-        return None
+            return "sell", None
+        return None, None
 
     regime = str(df_clean["regime"].iloc[-1])
 
@@ -450,7 +456,7 @@ def check_xgboost_signal(
     if not model_path.exists():
         print(f"[LiveRunner] Modelo multi-régimen no encontrado: {model_path} (régimen={regime})")
         print("  Entrena con multi_regime: true en el YAML de ML y run_experiment.")
-        return None
+        return None, regime
 
     model = joblib.load(model_path)
     prob = float(model.predict_proba(last_row)[0, 1])
@@ -461,10 +467,10 @@ def check_xgboost_signal(
         sell_t = float(th.get("prob_sell_threshold", xgb_cfg.get("prob_sell_threshold", 0.45)))
         print(f"  XGB [{regime}] prob={prob:.4f} | buy>{buy_t} sell<{sell_t}")
         if prob > buy_t:
-            return "buy"
+            return "buy", regime
         if prob < sell_t:
-            return "sell"
-        return None
+            return "sell", regime
+        return None, regime
 
     if regime == REGIME_BEAR:
         th = _merge_regime_thresholds(xgb_cfg, ml_cfg, "bear")
@@ -472,20 +478,20 @@ def check_xgboost_signal(
         c_t = float(th.get("prob_short_close_threshold", 0.45))
         print(f"  XGB [{regime}] prob(short-signal)={prob:.4f} | open>{o_t} close<{c_t}")
         if prob > o_t:
-            return "open_short"
+            return "open_short", regime
         if prob < c_t:
-            return "sell"
-        return None
+            return "sell", regime
+        return None, regime
 
     th = _merge_regime_thresholds(xgb_cfg, ml_cfg, "sideways")
     buy_t = float(th.get("prob_buy_threshold", 0.55))
     sell_t = float(th.get("prob_sell_threshold", 0.45))
     print(f"  XGB [{regime}] prob={prob:.4f} | buy>{buy_t} sell<{sell_t}")
     if prob > buy_t:
-        return "buy"
+        return "buy", regime
     if prob < sell_t:
-        return "sell"
-    return None
+        return "sell", regime
+    return None, regime
 
 
 def execute_signal(
@@ -665,6 +671,7 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
             print(f"[{ts}] {symbol} vela={last_fecha[:16]} cierre={price:.2f} RSI={rsi_val:.1f}")
 
             signal = None
+            regime = None
             if strategy == "rsi_cross":
                 signal = check_rsi_cross_signal(df, cfg)
 
@@ -678,17 +685,19 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
                             print(f"  RSI 1D cruce ↓ {exit_lvl} → señal de salida")
 
             elif strategy == "xgboost":
-                signal = check_xgboost_signal(df, cfg, symbol, dfs_by_tf=dfs_tf)
+                signal, regime = check_xgboost_signal(df, cfg, symbol, dfs_by_tf=dfs_tf)
             else:
                 print(f"[LiveRunner] Estrategia desconocida: {strategy}")
 
             if signal:
                 print(f"  *** SEÑAL: {signal.upper()} ***")
+                reg_line = f"regime={regime}\n" if regime else ""
                 send_pushover_async(
                     (
                         f"symbol={symbol}\n"
                         f"candle={last_fecha}\n"
                         f"price={float(price):.6g}\n"
+                        f"{reg_line}"
                         f"signal={signal}\n"
                         f"strategy={strategy}\n"
                         f"mode={mode}"
@@ -709,6 +718,7 @@ def run_loop(cfg: dict, agent: ExecutionAgent | PaperExecutionAgent) -> None:
                         "close_price": float(price),
                         "rsi": float(rsi_val) if rsi_val == rsi_val else None,
                         "signal": signal,
+                        "regime": regime,
                         "mode": "PAPER" if isinstance(agent, PaperExecutionAgent) else env,
                     }
                 )
@@ -799,21 +809,24 @@ def main() -> None:
         print(f"[once] {symbol} cierre={price:.2f} RSI={rsi_val:.1f}")
 
         signal = None
+        regime = None
         if strategy == "rsi_cross":
             signal = check_rsi_cross_signal(df, cfg)
         elif strategy == "xgboost":
-            signal = check_xgboost_signal(df, cfg, symbol, dfs_by_tf=dfs_tf)
+            signal, regime = check_xgboost_signal(df, cfg, symbol, dfs_by_tf=dfs_tf)
 
         if signal:
             print(f"  *** SEÑAL: {signal.upper()} ***")
             last_fecha_once = str(df.iloc[-1]["fecha"])
             env_once = "TESTNET" if cfg.get("testnet", True) else "MAINNET"
             mode_once = "PAPER" if isinstance(agent, PaperExecutionAgent) else env_once
+            reg_line = f"regime={regime}\n" if regime else ""
             send_pushover_async(
                 (
                     f"symbol={symbol}\n"
                     f"candle={last_fecha_once}\n"
                     f"price={float(price):.6g}\n"
+                    f"{reg_line}"
                     f"signal={signal}\n"
                     f"strategy={strategy}\n"
                     f"mode={mode_once}"

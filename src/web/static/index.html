@@ -229,6 +229,7 @@
           <th>Timestamp</th>
           <th>Symbol</th>
           <th>Strategy</th>
+          <th>Regime</th>
           <th>Candle</th>
           <th>Close</th>
           <th>RSI</th>
@@ -236,7 +237,7 @@
           <th>Mode</th>
         </tr>
       </thead>
-      <tbody id="signalsBody"><tr><td colspan="8" class="empty-msg">Loading…</td></tr></tbody>
+      <tbody id="signalsBody"><tr><td colspan="9" class="empty-msg">Loading…</td></tr></tbody>
     </table>
   </div>
 
@@ -322,7 +323,11 @@
       setMetric("sumWorstTrade", worst == null ? "–" : `${Number(worst) >= 0 ? "+" : ""}${fmtNum(worst)} USDT`, "var(--red)");
 
       const lastSignal = summary.last_signal;
-      const signalText = lastSignal ? `${lastSignal.symbol || "?"} ${lastSignal.signal || "NONE"}` : "–";
+      let signalText = "–";
+      if (lastSignal) {
+        const rg = lastSignal.regime ? ` [${lastSignal.regime}]` : "";
+        signalText = `${lastSignal.symbol || "?"} ${lastSignal.signal || "NONE"}${rg}`;
+      }
       setMetric("sumLastSignal", signalText);
       setMetric("sumLastTrade", summary.last_trade_timestamp ? esc(summary.last_trade_timestamp) : "–");
     }
@@ -348,7 +353,7 @@
     function renderSignals(rows) {
       const tb = document.getElementById("signalsBody");
       if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="8" class="empty-msg">No signals yet.</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="9" class="empty-msg">No signals yet.</td></tr>`;
         return;
       }
       tb.innerHTML = rows
@@ -358,6 +363,7 @@
           <td>${esc(r.timestamp)}</td>
           <td>${esc(r.symbol)}</td>
           <td>${esc(r.strategy)}</td>
+          <td>${esc(r.regime)}</td>
           <td>${esc(r.candle_time)}</td>
           <td>${fmtNum(r.close_price)}</td>
           <td>${fmtNum(r.rsi, 1)}</td>
