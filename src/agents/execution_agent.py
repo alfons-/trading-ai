@@ -26,6 +26,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OrderSide = Literal["Buy", "Sell"]
 OrderType = Literal["Market", "Limit"]
 
+
+def _float_or_none(val: Any) -> float | None:
+    if val is None or val == "":
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
 _TESTNET_URL = "https://api-testnet.bybit.com"
 _MAINNET_URL = "https://api.bybit.com"
 
@@ -506,6 +515,10 @@ class PaperExecutionAgent:
         order_id = self._next_order_id()
         cost = qty * exec_price
 
+        # En JSONL: para cierres (reduce_only) Bybit no manda SL/TP; copiamos los de la posición cerrada.
+        log_stop_loss: float | None = stop_loss
+        log_take_profit: float | None = take_profit
+
         if side == "Buy" and not reduce_only:
             self._balance -= cost
             self._positions[symbol] = {
@@ -522,6 +535,8 @@ class PaperExecutionAgent:
         elif side == "Sell" and reduce_only:
             pos = self._positions.pop(symbol, None)
             if pos:
+                log_stop_loss = _float_or_none(pos.get("stop_loss"))
+                log_take_profit = _float_or_none(pos.get("take_profit"))
                 pnl = (exec_price - pos["entry_price"]) * qty
                 self._balance += cost + pnl
                 trade = {
@@ -550,6 +565,8 @@ class PaperExecutionAgent:
         elif side == "Buy" and reduce_only:
             pos = self._positions.pop(symbol, None)
             if pos:
+                log_stop_loss = _float_or_none(pos.get("stop_loss"))
+                log_take_profit = _float_or_none(pos.get("take_profit"))
                 pnl = (pos["entry_price"] - exec_price) * qty
                 self._balance += (qty * pos["entry_price"]) + pnl
                 trade = {
@@ -572,8 +589,8 @@ class PaperExecutionAgent:
             "order_type": order_type,
             "qty": qty,
             "price": exec_price,
-            "stop_loss": stop_loss,
-            "take_profit": take_profit,
+            "stop_loss": log_stop_loss,
+            "take_profit": log_take_profit,
             "reduce_only": reduce_only,
             "ret_code": 0,
             "ret_msg": "paper_ok",
@@ -585,8 +602,8 @@ class PaperExecutionAgent:
         send_pushover_async(_pushover_order_message(order_info), title=title)
         print(
             f"[PaperExecution] {side} {qty} {symbol} @ {exec_price:.2f}"
-            f"{f' SL={stop_loss}' if stop_loss else ''}"
-            f"{f' TP={take_profit}' if take_profit else ''}"
+            f"{f' SL={log_stop_loss}' if log_stop_loss is not None else ''}"
+            f"{f' TP={log_take_profit}' if log_take_profit is not None else ''}"
             f" | Balance: {self._balance:.2f} USDT"
         )
         return order_info
